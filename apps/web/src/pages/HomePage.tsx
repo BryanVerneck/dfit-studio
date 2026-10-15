@@ -123,14 +123,14 @@ export default function HomePage() {
       )}
 
       <nav className="mt-6 flex items-center justify-between" aria-label="Semana">
-        <button type="button" onClick={() => changeWeek(-1)} className="rounded-lg px-3 py-2 text-muted hover:text-white" aria-label="Semana anterior">
-          ‹
+        <button type="button" onClick={() => changeWeek(-1)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-white" aria-label="Semana anterior">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
         </button>
         <p className="text-sm text-muted">
           {dayAndMonth(days[0])} – {dayAndMonth(days[6])}
         </p>
-        <button type="button" onClick={() => changeWeek(1)} className="rounded-lg px-3 py-2 text-muted hover:text-white" aria-label="Próxima semana">
-          ›
+        <button type="button" onClick={() => changeWeek(1)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-white" aria-label="Próxima semana">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
         </button>
       </nav>
 

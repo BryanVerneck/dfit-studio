@@ -11,7 +11,7 @@
   --color-violet: #6a1bb8;
   --color-danger: #ff6b6b;
   --color-success: #3ddc84;
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Montserrat Variable", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 html {
