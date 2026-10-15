@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { Alert } from "../components/Alert";
+import { StudentTabs } from "../components/StudentTabs";
 import logo from "../assets/logo.png";
 import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, sundayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
@@ -112,6 +113,8 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+
+      {isStudent && <StudentTabs />}
 
       <h1 className="mt-6 text-2xl font-semibold">Olá, {state.user.name.split(" ")[0]}</h1>
       {usage && (

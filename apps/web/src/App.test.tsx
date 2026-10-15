@@ -526,3 +526,67 @@ describe("new student", () => {
     expect(await screen.findByText("Já existe um aluno com este e-mail.")).toBeInTheDocument();
   });
 });
+
+describe("my bookings", () => {
+  const at = (day: string, hour: string) => `${day}T${hour}:00-03:00`;
+  const booking = (id: string, startsAt: string, extra = {}) => ({
+    id, sessionId: `s-${id}`, source: "standing", status: "booked", cancelReason: null, cancelNote: null, name: "Treino", startsAt, durationMin: 60, ...extra,
+  });
+  let list: any[];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-14T12:00:00Z") });
+    list = [
+      booking("early", at("2026-10-14", "07:00")),
+      booking("a", at("2026-10-15", "07:00")),
+      booking("b", at("2026-10-15", "18:00"), { source: "one_off" }),
+      booking("c", at("2026-10-16", "07:00"), { status: "cancelled", cancelReason: "class_cancelled", cancelNote: "Feriado" }),
+    ];
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    routes["GET /me/bookings"] = () => ({ body: list });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("lists upcoming classes by day and leaves out the ones that already ended", async () => {
+    renderAt("/minhas-aulas");
+    expect(await screen.findByText("Quinta-feira, 15 de outubro")).toBeInTheDocument();
+    expect(screen.getByText("Sexta-feira, 16 de outubro")).toBeInTheDocument();
+    expect(screen.queryByText("Quarta-feira, 14 de outubro")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Horário fixo").length).toBeGreaterThan(0);
+    expect(screen.getByText("Avulsa")).toBeInTheDocument();
+    expect(screen.getByText("Aula cancelada pelo estúdio: Feriado")).toBeInTheDocument();
+  });
+
+  it("cancels a booking after confirmation", async () => {
+    routes["DELETE /bookings/a"] = () => {
+      list = list.filter((b) => b.id !== "a");
+      return { body: { booking: { id: "a" } } };
+    };
+    renderAt("/minhas-aulas");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click((await screen.findAllByRole("button", { name: "Cancelar" }))[0]);
+    expect(calls.some((c) => c.path === "/bookings/a")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/bookings/a")).toBe(true));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Cancelar" })).toHaveLength(1));
+  });
+
+  it("shows an empty message and a tab to move between screens", async () => {
+    list = [];
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("link", { name: "Minhas aulas" }));
+    expect(await screen.findByText("Você não tem aulas reservadas.")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Aulas" }));
+    expect(await screen.findByRole("heading", { name: /Olá/ })).toBeInTheDocument();
+  });
+
+  it("sends the studio team back to the class list", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: { ...me, role: "owner" } });
+    renderAt("/minhas-aulas");
+    expect(await screen.findByRole("heading", { name: /Olá/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Minhas aulas" })).not.toBeInTheDocument();
+  });
+});

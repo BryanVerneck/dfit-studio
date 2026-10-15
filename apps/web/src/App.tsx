@@ -7,6 +7,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import MyBookingsPage from "./pages/MyBookingsPage";
 import NewStudentPage from "./pages/NewStudentPage";
 import StudentsPage from "./pages/StudentsPage";
 
@@ -21,6 +22,7 @@ export default function App() {
         </Route>
         <Route element={<RequireAuth />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/minhas-aulas" element={<MyBookingsPage />} />
           <Route path="/trocar-senha" element={<ChangePasswordPage />} />
         <Route element={<RequireStaff />}>
           <Route path="/equipe/aprovacoes" element={<ApprovalsPage />} />
