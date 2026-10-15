@@ -3,7 +3,8 @@ import { Link } from "react-router";
 import { Alert } from "../components/Alert";
 import { AuthLayout } from "../components/AuthLayout";
 import { Button } from "../components/Button";
-import { PasswordField, SelectField, TextField } from "../components/TextField";
+import { Select } from "../components/Select";
+import { PasswordField, TextField } from "../components/TextField";
 import { STUDIO_SLUG } from "../config";
 import { publicRequest } from "../lib/api";
 import { errorMessage } from "../lib/messages";
@@ -68,12 +69,17 @@ export default function SignupPage() {
         <TextField label="Nome" autoComplete="name" value={form.name} onChange={set("name")} error={errors.name} />
         <TextField label="E-mail" type="email" autoComplete="email" inputMode="email" value={form.email} onChange={set("email")} error={errors.email} />
         <TextField label="Telefone (opcional)" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} onChange={set("phone")} />
-        <SelectField label="Gênero (opcional)" value={form.gender} onChange={set("gender")}>
-          <option value="">Prefiro não informar</option>
-          <option value="feminino">Feminino</option>
-          <option value="masculino">Masculino</option>
-          <option value="outro">Outro</option>
-        </SelectField>
+        <Select
+          label="Gênero (opcional)"
+          value={form.gender}
+          onChange={(gender) => setForm((f) => ({ ...f, gender }))}
+          options={[
+            { value: "", label: "Prefiro não informar" },
+            { value: "feminino", label: "Feminino" },
+            { value: "masculino", label: "Masculino" },
+            { value: "outro", label: "Outro" },
+          ]}
+        />
         <PasswordField label="Senha" autoComplete="new-password" value={form.password} onChange={set("password")} error={errors.password} hint="Pelo menos 8 caracteres." />
         <PasswordField label="Confirmar senha" autoComplete="new-password" value={form.confirmation} onChange={set("confirmation")} error={errors.confirmation} />
         <Button type="submit" loading={busy}>

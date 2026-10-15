@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import logo from "../assets/logo.png";
 import { Alert } from "../components/Alert";
+import { Select } from "../components/Select";
 import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
 import { approveStudent, fetchPendingStudents, type PendingStudent } from "../lib/staff";
 
-const LIMITS = [1, 2, 3, 4, 5, 6, 7];
+const LIMIT_OPTIONS = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: String(n) }));
 
 export default function ApprovalsPage() {
   const [pending, setPending] = useState<PendingStudent[] | null>(null);
@@ -71,21 +72,12 @@ export default function ApprovalsPage() {
               <div className="mt-3">
                 {choosing === s.userId ? (
                   <div role="group" aria-label={`Aprovar ${s.name}`}>
-                    <label htmlFor={`limit-${s.userId}`} className="mb-1 block text-sm text-muted">
-                      Aulas por semana
-                    </label>
-                    <select
-                      id={`limit-${s.userId}`}
-                      value={limit}
-                      onChange={(e) => setLimit(Number(e.target.value))}
-                      className="mb-3 block w-full rounded-lg border border-line bg-ink px-3 py-3 text-base text-white"
-                    >
-                      {LIMITS.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      label="Aulas por semana"
+                      value={String(limit)}
+                      onChange={(v) => setLimit(Number(v))}
+                      options={LIMIT_OPTIONS}
+                    />
                     <div className="flex gap-2">
                       <button
                         type="button"

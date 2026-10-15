@@ -73,7 +73,7 @@ export default function ClassDetailPage() {
                     <p className="font-semibold">{r.name}</p>
                     {r.phone && <p className="text-sm text-muted">{r.phone}</p>}
                   </div>
-                  <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-muted">
+                  <span className="shrink-0 rounded-full border border-line px-3 py-1 text-xs text-muted">
                     {r.source === "standing" ? "Horário fixo" : "Avulsa"}
                   </span>
                 </li>

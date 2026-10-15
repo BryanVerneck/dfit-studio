@@ -336,7 +336,8 @@ describe("staff approvals", () => {
     const user = userEvent.setup();
     expect(await screen.findByText("Novo Aluno")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Aprovar" }));
-    await user.selectOptions(screen.getByLabelText("Aulas por semana"), "4");
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "4" }));
     await user.click(screen.getByRole("button", { name: "Confirmar" }));
     expect(await screen.findByText("Novo Aluno foi aprovado(a).")).toBeInTheDocument();
     expect(await screen.findByText("Nenhum cadastro pendente.")).toBeInTheDocument();
@@ -400,7 +401,8 @@ describe("staff students", () => {
     const user = userEvent.setup();
     await screen.findByText("Bruno Dias");
     await user.click(screen.getAllByRole("button", { name: "Alterar limite" })[1]);
-    await user.selectOptions(screen.getByLabelText("Aulas por semana"), "2");
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "2" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
     expect(await screen.findByText("2 aulas por semana")).toBeInTheDocument();
     expect(await screen.findByText("Limite de Bruno Dias atualizado.")).toBeInTheDocument();

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import logo from "../assets/logo.png";
 import { Alert } from "../components/Alert";
+import { Select } from "../components/Select";
 import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
 import { createTemporaryPassword, fetchStudents, setWeeklyLimit, type StudentRow } from "../lib/staff";
 
-const LIMITS = [0, 1, 2, 3, 4, 5, 6, 7];
+const LIMIT_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: String(n) }));
 
 type Panel = { id: string; mode: "limit" | "confirm-password" | "password"; password?: string };
 
@@ -139,21 +140,7 @@ export default function StudentsPage() {
 
                 {open?.mode === "limit" && (
                   <div className="mt-3" role="group" aria-label={`Limite de ${s.name}`}>
-                    <label htmlFor={`limit-${s.studentId}`} className="mb-1 block text-sm text-muted">
-                      Aulas por semana
-                    </label>
-                    <select
-                      id={`limit-${s.studentId}`}
-                      value={limit}
-                      onChange={(e) => setLimit(Number(e.target.value))}
-                      className="mb-3 block w-full rounded-lg border border-line bg-ink px-3 py-3 text-base text-white"
-                    >
-                      {LIMITS.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
+                    <Select label="Aulas por semana" value={String(limit)} onChange={(v) => setLimit(Number(v))} options={LIMIT_OPTIONS} />
                     <div className="flex gap-2">
                       <button type="button" disabled={busy} onClick={() => void saveLimit(s)} className={primary}>
                         {busy ? "Salvando…" : "Salvar"}
