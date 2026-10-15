@@ -1,8 +1,22 @@
+import { Navigate, Route, Routes } from "react-router";
+import { PublicOnly, RequireAuth } from "./auth/guards";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
+import HomePage from "./pages/HomePage";
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
+
 export default function App() {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-2 bg-gray-900 p-4 text-center text-white">
-      <h1 className="text-3xl font-semibold">Dfit Studio</h1>
-      <p className="text-gray-300">Class schedule coming soon.</p>
-    </main>
+    <Routes>
+      <Route element={<PublicOnly />}>
+        <Route path="/entrar" element={<LoginPage />} />
+        <Route path="/cadastro" element={<SignupPage />} />
+      </Route>
+      <Route element={<RequireAuth />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/trocar-senha" element={<ChangePasswordPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

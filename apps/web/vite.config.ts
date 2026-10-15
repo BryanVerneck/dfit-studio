@@ -14,19 +14,20 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+      includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
         name: "Dfit Studio",
         short_name: "Dfit",
-        description: "Find and book your classes at Dfit Studio",
-        theme_color: "#111827",
-        background_color: "#111827",
+        lang: "pt-BR",
+        description: "Veja as aulas e reserve seu horário no Dfit Studio",
+        theme_color: "#020002",
+        background_color: "#020002",
         display: "standalone",
         start_url: "/",
         icons: [
           { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
-          { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {

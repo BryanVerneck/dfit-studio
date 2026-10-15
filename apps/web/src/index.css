@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+/* Colors come from the Dfit logo: near-black background, white "D", pink to violet gradient. */
+@theme {
+  --color-ink: #020002;
+  --color-surface: #0e0b12;
+  --color-line: #6f687a;
+  --color-muted: #a59fae;
+  --color-brand: #e41464;
+  --color-brand-light: #ff5c95;
+  --color-violet: #6a1bb8;
+  --color-danger: #ff6b6b;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  background: var(--color-ink);
+  color: #fff;
+  color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
