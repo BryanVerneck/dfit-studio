@@ -12,8 +12,8 @@ export function AppToaster() {
         classNames: {
           toast: "!rounded-xl !border !font-sans",
           default: "!border-line/60 !bg-surface !text-white",
-          success: "!border-success/70 !bg-[#0b2415] !text-success",
-          error: "!border-danger/70 !bg-[#2a0d12] !text-danger",
+          success: "!border-success/70 !bg-surface !text-success",
+          error: "!border-danger/70 !bg-surface !text-danger",
           closeButton: "!bg-surface !border-line/60 !text-white",
         },
       }}
