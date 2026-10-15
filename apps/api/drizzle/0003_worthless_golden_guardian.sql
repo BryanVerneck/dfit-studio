@@ -1,0 +1,2 @@
+DROP INDEX "bookings_idempotency_uq";--> statement-breakpoint
+CREATE UNIQUE INDEX "bookings_idempotency_uq" ON "bookings" USING btree ("student_id","idempotency_key") WHERE "bookings"."idempotency_key" IS NOT NULL;

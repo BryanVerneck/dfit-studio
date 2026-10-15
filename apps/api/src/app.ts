@@ -2,15 +2,21 @@ import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { ZodError } from "zod";
+import { AppError } from "./errors.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db/client.js";
 import { authRoutes } from "./routes/auth.js";
+import { bookingRoutes } from "./routes/bookings.js";
+import { scheduleRoutes } from "./routes/schedule.js";
 import { staffRoutes } from "./routes/staff.js";
 
 export function buildApp({ db, config }: { db: Db; config: Config }) {
   const app = Fastify({ logger: true, trustProxy: config.trustProxy });
 
   app.setErrorHandler((err, _request, reply) => {
+    if (err instanceof AppError) {
+      return reply.code(err.status).send({ error: err.code });
+    }
     if (err instanceof ZodError) {
       return reply.code(400).send({ error: "invalid_request", issues: err.issues });
     }
@@ -23,6 +29,8 @@ export function buildApp({ db, config }: { db: Db; config: Config }) {
   app.get("/health", async () => ({ status: "ok" }));
   app.register(authRoutes(config, db));
   app.register(staffRoutes(config, db));
+  app.register(scheduleRoutes(config, db));
+  app.register(bookingRoutes(config, db));
 
   return app;
 }

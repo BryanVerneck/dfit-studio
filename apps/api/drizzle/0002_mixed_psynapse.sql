@@ -1,0 +1,2 @@
+ALTER TABLE "bookings" ADD COLUMN "cancel_reason" text;--> statement-breakpoint
+ALTER TABLE "bookings" ADD CONSTRAINT "bookings_cancel_reason_ck" CHECK ("bookings"."cancel_reason" IS NULL OR "bookings"."cancel_reason" IN ('student', 'staff', 'swap', 'enrollment_ended'));

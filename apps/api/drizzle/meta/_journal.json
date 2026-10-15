@@ -15,6 +15,20 @@
       "when": 1792033875096,
       "tag": "0001_exotic_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792034352151,
+      "tag": "0002_mixed_psynapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792034375817,
+      "tag": "0003_worthless_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

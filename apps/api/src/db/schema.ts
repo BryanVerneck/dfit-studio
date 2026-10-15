@@ -217,15 +217,22 @@ export const bookings = pgTable(
     idempotencyKey: text("idempotency_key"),
     createdAt: createdAt(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // Why a booking was cancelled. An absence ('student', 'staff', 'swap') must not be re-booked by the
+    // fixed schedule; 'enrollment_ended' must, if the student is enrolled in that slot again.
+    cancelReason: text("cancel_reason"),
   },
   (t) => [
+    check(
+      "bookings_cancel_reason_ck",
+      sql`${t.cancelReason} IS NULL OR ${t.cancelReason} IN ('student', 'staff', 'swap', 'enrollment_ended')`,
+    ),
     // A student holds at most one active seat per class.
     uniqueIndex("bookings_active_session_student_uq")
       .on(t.sessionId, t.studentId)
       .where(sql`${t.status} = 'booked'`),
-    // A retried request with the same key cannot book twice.
+    // A retried request with the same key cannot book twice. Keys are scoped to the student.
     uniqueIndex("bookings_idempotency_uq")
-      .on(t.studioId, t.idempotencyKey)
+      .on(t.studentId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} IS NOT NULL`),
     index("bookings_student_status_idx").on(t.studentId, t.status),
     index("bookings_session_idx").on(t.sessionId),

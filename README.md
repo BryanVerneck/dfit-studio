@@ -39,6 +39,35 @@ Email and password. Passwords are stored only as argon2 hashes. A login returns 
 | `POST /staff/students/:userId/approve` | staff, owner | Activates the student |
 | `POST /staff/users/:userId/temporary-password` | staff (students), owner (anyone) | Returns a one-time temporary password |
 
+## Booking
+
+Every class occurrence is a row (`class_sessions`) with a seat counter, and every seat is a booking. The rules are enforced inside one short database transaction per request:
+
+1. The student's row is locked, so two taps or two devices cannot both slip under the weekly limit.
+2. The weekly limit is checked (the booking week is Monday to Sunday in the studio's time zone, using the agreement valid on the class date).
+3. The seat is taken with a single `UPDATE ... WHERE booked_count < capacity`, so two requests for the last seat can never both succeed.
+4. The booking row is inserted. Any failure rolls everything back, including the seat count.
+
+A swap cancels the original and books the new class in the same transaction, so the student keeps the original if the swap fails. Booking and swapping accept an `Idempotency-Key` header (or `idempotencyKey` in the body) so a retry on a bad connection does not book twice.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /sessions?from&to` | logged in | Classes with `spotsLeft`; students also get `myBookingId` |
+| `POST /bookings` | student | Book a class (`sessionId`) |
+| `DELETE /bookings/:id` | student (until the cutoff), staff (any time) | Cancel a booking |
+| `POST /bookings/:id/swap` | student | One-off swap to another class (`toSessionId`) |
+| `GET /me/bookings` | student | Upcoming bookings |
+| `GET /me/weekly-usage?date` | student | Classes used and remaining in that week |
+| `POST /staff/slots`, `GET /staff/slots` | staff, owner | The weekly timetable |
+| `POST /staff/sessions/generate` | staff, owner | Create sessions for the coming days and book fixed schedules into them |
+| `GET /staff/sessions/:id/roster` | staff, owner | Who is booked in a class |
+| `POST /staff/bookings` | staff, owner | Book a student into a class |
+| `POST /staff/students/:studentId/agreement` | staff, owner | Set the weekly class limit (history is kept) |
+| `POST /staff/students/:studentId/standing-enrollments` | staff, owner | Put a student on a fixed weekly class |
+| `POST /staff/standing-enrollments/:id/end` | staff, owner | End a fixed class from a date; a permanent change of time is this plus a new enrollment |
+
+Students need an agreement (weekly limit) before they can book. Session generation is idempotent and meant to run daily; a scheduled job for it is not set up yet, so for now staff run `POST /staff/sessions/generate`.
+
 Forgot password: staff issue a temporary password and the student must replace it at next login. An emailed reset link is planned for a later phase.
 
 After changing `src/db/schema.ts`, run `pnpm --filter @dfit/api db:generate` to create a new migration and commit it.
