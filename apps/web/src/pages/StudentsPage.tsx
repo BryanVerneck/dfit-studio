@@ -90,7 +90,12 @@ export default function StudentsPage() {
         </nav>
       </header>
 
-      <h1 className="mt-6 text-2xl font-semibold">Alunos</h1>
+      <div className="mt-6 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Alunos</h1>
+        <Link to="/equipe/alunos/novo" className="rounded-lg bg-linear-to-r from-brand to-violet px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110">
+          Novo aluno
+        </Link>
+      </div>
       <p className="mt-1 text-muted">Veja o limite semanal de cada aluno e gere uma senha temporária quando alguém esquecer a senha.</p>
 
       <div className="mt-6">

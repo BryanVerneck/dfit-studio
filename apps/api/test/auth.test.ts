@@ -116,6 +116,26 @@ describe.skipIf(!process.env.DATABASE_URL)("login", () => {
     expect((await app.inject({ method: "GET", url: "/staff/students", headers: bearer(student.accessToken) })).statusCode).toBe(403);
   });
 
+  it("lets staff create a student with a limit and a temporary password", async () => {
+    const owner = (await login("owner", "password-123")).json();
+    const created = await post("/staff/students", { name: "Carla", email: email("carla"), phone: "11 90000-0000", weeklyLimit: 2 }, { headers: bearer(owner.accessToken) });
+    expect(created.statusCode).toBe(201);
+    const { temporaryPassword, studentId } = created.json();
+    expect(temporaryPassword).toHaveLength(12);
+
+    const list = await app.inject({ method: "GET", url: "/staff/students", headers: bearer(owner.accessToken) });
+    expect(list.json().find((s: { studentId: string }) => s.studentId === studentId)).toMatchObject({ name: "Carla", phone: "11 90000-0000", weeklyLimit: 2 });
+
+    const first = await login("carla", temporaryPassword);
+    expect(first.statusCode).toBe(200);
+    expect(first.json().mustChangePassword).toBe(true);
+
+    const again = await post("/staff/students", { name: "Carla 2", email: email("carla"), weeklyLimit: 2 }, { headers: bearer(owner.accessToken) });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe("email_taken");
+    expect((await post("/staff/students", { name: "X", email: "nope", weeklyLimit: 2 }, { headers: bearer(owner.accessToken) })).statusCode).toBe(400);
+  });
+
   it("protects routes by token and by role", async () => {
     expect((await app.inject({ method: "GET", url: "/me" })).statusCode).toBe(401);
     expect((await app.inject({ method: "GET", url: "/me", headers: bearer("garbage") })).statusCode).toBe(401);

@@ -7,6 +7,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import NewStudentPage from "./pages/NewStudentPage";
 import StudentsPage from "./pages/StudentsPage";
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
         <Route element={<RequireStaff />}>
           <Route path="/equipe/aprovacoes" element={<ApprovalsPage />} />
           <Route path="/equipe/alunos" element={<StudentsPage />} />
+          <Route path="/equipe/alunos/novo" element={<NewStudentPage />} />
           <Route path="/equipe/aulas/:id" element={<ClassDetailPage />} />
         </Route>
         </Route>

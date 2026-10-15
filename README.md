@@ -50,6 +50,7 @@ Email and password. Passwords are stored only as argon2 hashes. A login returns 
 | `POST /auth/change-password` | logged in | Required after a temporary password |
 | `GET /me` | logged in | Current user |
 | `GET /staff/pending-students` | staff, owner | Signups waiting for approval |
+| `POST /staff/students` | staff, owner | Creates an active student with a weekly limit and a one-time temporary password |
 | `POST /staff/students/:userId/approve` | staff, owner | Activates the student |
 | `POST /staff/users/:userId/temporary-password` | staff (students), owner (anyone) | Returns a one-time temporary password |
 

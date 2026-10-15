@@ -484,3 +484,45 @@ describe("class detail for staff", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Aula não encontrada.");
   });
 });
+
+describe("new student", () => {
+  const staff = { id: "st1", email: "bia@x.com", name: "Bia Staff", role: "owner", studioId: "studio1", mustChangePassword: false };
+
+  beforeEach(() => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/students"] = () => ({ body: [] });
+  });
+
+  it("creates a student and shows the temporary password once", async () => {
+    routes["POST /staff/students"] = () => ({ status: 201, body: { userId: "u9", studentId: "s9", temporaryPassword: "Tmp-Pass-999" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: "Novo aluno" }));
+    await user.type(screen.getByLabelText("Nome"), "Carla Dias");
+    await user.type(screen.getByLabelText("E-mail"), "Carla@X.com");
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "2" }));
+    await user.click(screen.getByRole("button", { name: "Cadastrar aluno" }));
+    expect(await screen.findByText("Tmp-Pass-999")).toBeInTheDocument();
+    expect(screen.getByText("Carla Dias foi cadastrado.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students" && c.body)?.body).toEqual({ name: "Carla Dias", email: "Carla@X.com", weeklyLimit: 2 });
+    await user.click(screen.getByRole("button", { name: "Cadastrar outro" }));
+    expect(screen.queryByText("Tmp-Pass-999")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toHaveValue("");
+  });
+
+  it("checks the form and reports an e-mail that is already in use", async () => {
+    routes["POST /staff/students"] = () => ({ status: 409, body: { error: "email_taken" } });
+    renderAt("/equipe/alunos/novo");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Cadastrar aluno" }));
+    expect(screen.getByText("Informe o nome.")).toBeInTheDocument();
+    expect(screen.getByText("Informe seu e-mail.")).toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/staff/students" && c.body)).toBe(false);
+    await user.type(screen.getByLabelText("Nome"), "Carla");
+    await user.type(screen.getByLabelText("E-mail"), "carla@x.com");
+    await user.click(screen.getByRole("button", { name: "Cadastrar aluno" }));
+    expect(await screen.findByText("Já existe um aluno com este e-mail.")).toBeInTheDocument();
+  });
+});

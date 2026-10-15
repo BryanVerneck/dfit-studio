@@ -16,6 +16,17 @@ export async function approveStudent(userId: string, weeklyLimit: number) {
   await authedRequest(`/staff/students/${studentId}/agreement`, "POST", { weeklyLimit });
 }
 
+export interface NewStudent {
+  name: string;
+  email: string;
+  phone?: string;
+  weeklyLimit: number;
+}
+
+// Creates an active student with a temporary password (shown once) that must be replaced at the first login.
+export const createStudent = (student: NewStudent) =>
+  authedRequest<{ userId: string; studentId: string; temporaryPassword: string }>("/staff/students", "POST", student);
+
 export interface StudentRow {
   studentId: string;
   userId: string;
