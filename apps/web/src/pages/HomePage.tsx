@@ -167,8 +167,17 @@ export default function HomePage() {
             const mine = s.myBookingId !== null;
             const started = new Date(s.startsAt).getTime() <= now;
             const full = s.spotsLeft === 0;
+            // While swapping, the classes the student can move to get a pink to violet border.
+            const swappable = swapFrom !== null && !mine && !started && !full;
             return (
-              <li key={s.id} className="rounded-xl border border-line/60 bg-surface p-4">
+              <li
+                key={s.id}
+                className={
+                  swappable
+                    ? "rounded-xl border-2 border-transparent p-[15px] [background:linear-gradient(var(--color-surface),var(--color-surface))_padding-box,linear-gradient(to_right,var(--color-brand),var(--color-violet))_border-box]"
+                    : "rounded-xl border border-line/60 bg-surface p-4"
+                }
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xl font-semibold">{formatTime(s.startsAt)}</p>
@@ -214,14 +223,14 @@ export default function HomePage() {
                             </button>
                           )}
                           {!swapFrom && (
-                            <button type="button" onClick={() => setConfirming(s.id)} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
+                            <button type="button" onClick={() => setConfirming(s.id)} className="rounded-lg px-3 py-2 text-sm text-danger underline hover:brightness-125">
                             Cancelar
                           </button>
                           )}
                         </div>
                       )
                     ) : mine ? (
-                      <p className="text-sm font-medium text-brand-light">✓ Você esteve nesta aula</p>
+                      <p className="text-sm font-medium text-success">✓ Você esteve nesta aula</p>
                     ) : started ? (
                       <p className="text-sm text-muted">Aula encerrada</p>
                     ) : (
