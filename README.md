@@ -66,7 +66,18 @@ A swap cancels the original and books the new class in the same transaction, so 
 | `POST /staff/students/:studentId/standing-enrollments` | staff, owner | Put a student on a fixed weekly class |
 | `POST /staff/standing-enrollments/:id/end` | staff, owner | End a fixed class from a date; a permanent change of time is this plus a new enrollment |
 
-Students need an agreement (weekly limit) before they can book. Session generation is idempotent and meant to run daily; a scheduled job for it is not set up yet, so for now staff run `POST /staff/sessions/generate`.
+Students need an agreement (weekly limit) before they can book.
+
+### Daily session generation
+
+The API creates the coming weeks' class sessions, and books each student's fixed schedule into them, by itself:
+
+- When the server starts it runs once for every studio, to catch up after any downtime.
+- Then it checks every 15 minutes and runs for each studio during 03:00 to 03:59 in that studio's own time zone, once per day.
+- It is safe to run at any time and from several server instances at once: a database lock lets only one instance work while the others skip, and existing sessions and bookings are never duplicated.
+- If one studio fails, the others still run, and the failed one is retried on the next check while its hour lasts. Look for `session generation finished` / `failed` in the logs.
+
+`POST /staff/sessions/generate` still runs it on demand for the staff member's studio (for example right after changing the timetable). Set `GENERATION_HOUR` to change the hour, or `DISABLE_SCHEDULER=true` to turn the built-in scheduler off (for example to run it from an external cron instead).
 
 Forgot password: staff issue a temporary password and the student must replace it at next login. An emailed reset link is planned for a later phase.
 
