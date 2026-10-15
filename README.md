@@ -61,12 +61,20 @@ A swap cancels the original and books the new class in the same transaction, so 
 | `POST /staff/slots`, `GET /staff/slots` | staff, owner | The weekly timetable |
 | `POST /staff/sessions/generate` | staff, owner | Create sessions for the coming days and book fixed schedules into them |
 | `GET /staff/sessions/:id/roster` | staff, owner | Who is booked in a class |
+| `POST /staff/sessions/:id/cancel` | staff, owner | Cancel one class (holiday, instructor out); cancels its bookings and lists the students to tell |
+| `POST /staff/sessions/cancel-day` | staff, owner | Cancel every class still scheduled on a date (`date`, optional `note`) |
 | `POST /staff/bookings` | staff, owner | Book a student into a class |
 | `POST /staff/students/:studentId/agreement` | staff, owner | Set the weekly class limit (history is kept) |
 | `POST /staff/students/:studentId/standing-enrollments` | staff, owner | Put a student on a fixed weekly class |
 | `POST /staff/standing-enrollments/:id/end` | staff, owner | End a fixed class from a date; a permanent change of time is this plus a new enrollment |
 
 Students need an agreement (weekly limit) before they can book.
+
+### Cancelling classes
+
+Cancelling a class marks it `cancelled` and cancels every active booking in it. Those bookings stop counting toward the weekly limit, so students can book another class that week. Students no longer see the class in `GET /sessions` (staff still do, marked `cancelled`), and `GET /me/bookings` keeps the cancelled booking with `cancelReason: "class_cancelled"` and the staff note, so a student can see why it disappeared. The response lists the affected students (name and phone) so staff can tell them; there are no automatic notifications yet. Generating sessions again never brings a cancelled class or its bookings back. Attended and no-show records are kept.
+
+Locks are always taken in the same order (student, then class row, then booking rows), so cancelling a class cannot deadlock with a student cancelling, booking or swapping at the same moment.
 
 ### Daily session generation
 

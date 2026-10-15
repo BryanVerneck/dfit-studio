@@ -1,9 +1,9 @@
 import { and, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import type { Db } from "../db/client.js";
-import { agreements, bookings, classSessions, classSlots, standingEnrollments, studios, students } from "../db/schema.js";
+import { agreements, bookings, classSessions, classSlots, standingEnrollments, studios, students, users } from "../db/schema.js";
 import { AppError } from "../errors.js";
-import { localDate, weekBounds } from "./time.js";
+import { dayRange, localDate, weekBounds } from "./time.js";
 
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -109,7 +109,10 @@ async function claimSeat(tx: Tx, studioId: string, sessionId: string) {
       ),
     )
     .returning({ id: classSessions.id });
-  if (claimed.length === 0) throw new AppError(409, "class_full");
+  if (claimed.length === 0) {
+    const [session] = await tx.select({ status: classSessions.status }).from(classSessions).where(eq(classSessions.id, sessionId));
+    throw new AppError(409, session?.status === "cancelled" ? "session_cancelled" : "class_full");
+  }
 }
 
 async function releaseSeat(tx: Tx, sessionId: string) {
@@ -195,9 +198,11 @@ export async function cancelBooking(
     }
     await lockStudent(tx, studio, found.booking.studentId);
 
+    // Lock order everywhere is student, then class row, then booking rows. Cancelling a whole class
+    // takes the class row first, so taking the booking row first here could deadlock with it.
+    const [session] = await tx.select().from(classSessions).where(eq(classSessions.id, found.booking.sessionId)).for("update");
     const [booking] = await tx.select().from(bookings).where(eq(bookings.id, found.booking.id)).for("update");
     if (booking.status !== "booked") throw new AppError(409, "booking_not_active");
-    const [session] = await tx.select().from(classSessions).where(eq(classSessions.id, booking.sessionId));
     if (input.actor.role === "student") {
       const cutoff = session.startsAt.getTime() - studio.cancellationCutoffMinutes * 60_000;
       if (Date.now() >= cutoff) throw new AppError(409, "too_late_to_cancel");
@@ -229,8 +234,7 @@ export async function swapBooking(
       .from(bookings)
       .where(
         and(eq(bookings.id, input.fromBookingId), eq(bookings.studioId, studio.id), eq(bookings.studentId, input.studentId)),
-      )
-      .for("update");
+      );
     if (!from) throw new AppError(404, "booking_not_found");
     if (from.status !== "booked") throw new AppError(409, "booking_not_active");
     if (from.sessionId === input.toSessionId) throw new AppError(400, "same_session");
@@ -243,6 +247,8 @@ export async function swapBooking(
       .where(inArray(classSessions.id, [from.sessionId, target.id]))
       .orderBy(classSessions.id)
       .for("update");
+    const [lockedFrom] = await tx.select().from(bookings).where(eq(bookings.id, from.id)).for("update");
+    if (lockedFrom.status !== "booked") throw new AppError(409, "booking_not_active");
 
     const [oldSession] = await tx.select().from(classSessions).where(eq(classSessions.id, from.sessionId));
     const cutoff = oldSession.startsAt.getTime() - studio.cancellationCutoffMinutes * 60_000;
@@ -391,7 +397,7 @@ export async function endEnrollment(db: Db, studio: StudioCtx, enrollmentId: str
     }
 
     const from = DateTime.fromISO(effectiveFrom, { zone: studio.timezone }).startOf("day").toJSDate();
-    const affected = await tx
+    const candidates = await tx
       .select({ id: bookings.id, sessionId: bookings.sessionId })
       .from(bookings)
       .innerJoin(classSessions, eq(classSessions.id, bookings.sessionId))
@@ -403,8 +409,21 @@ export async function endEnrollment(db: Db, studio: StudioCtx, enrollmentId: str
           eq(classSessions.slotId, enrollment.slotId),
           gte(classSessions.startsAt, from),
         ),
-      )
-      .for("update", { of: bookings });
+      );
+    if (candidates.length === 0) return { bookingsCancelled: 0 };
+
+    // Class rows first (in id order), then the booking rows, as everywhere else.
+    await tx
+      .select({ id: classSessions.id })
+      .from(classSessions)
+      .where(inArray(classSessions.id, [...new Set(candidates.map((c) => c.sessionId))]))
+      .orderBy(classSessions.id)
+      .for("update");
+    const affected = await tx
+      .select({ id: bookings.id, sessionId: bookings.sessionId })
+      .from(bookings)
+      .where(and(inArray(bookings.id, candidates.map((c) => c.id)), eq(bookings.status, "booked")))
+      .for("update");
     for (const row of affected) {
       await tx
         .update(bookings)
@@ -414,4 +433,82 @@ export async function endEnrollment(db: Db, studio: StudioCtx, enrollmentId: str
     }
     return { bookingsCancelled: affected.length };
   });
+}
+
+export interface CancelledClass {
+  sessionId: string;
+  startsAt: Date;
+  bookingsCancelled: number;
+  affected: { studentId: string; name: string; phone: string | null }[];
+}
+
+// Cancels a class (holiday, instructor out). Every active booking in it is cancelled and no longer
+// counts toward the student's weekly limit, so they can book another class that week. Staff get the
+// list of affected students to tell them; there are no notifications yet.
+export async function cancelSession(db: Db, studio: StudioCtx, sessionId: string, note?: string): Promise<CancelledClass> {
+  return db.transaction(async (tx) => {
+    // Taking the class row first stops new bookings (they fail with session_cancelled) and waits for
+    // any booking in progress, so the bookings read below are complete.
+    const [session] = await tx
+      .update(classSessions)
+      .set({ status: "cancelled", cancelledAt: new Date(), cancelNote: note ?? null })
+      .where(and(eq(classSessions.id, sessionId), eq(classSessions.studioId, studio.id), eq(classSessions.status, "scheduled")))
+      .returning();
+    if (!session) {
+      const [existing] = await tx
+        .select({ status: classSessions.status })
+        .from(classSessions)
+        .where(and(eq(classSessions.id, sessionId), eq(classSessions.studioId, studio.id)));
+      throw existing ? new AppError(409, "session_already_cancelled") : new AppError(404, "session_not_found");
+    }
+
+    const cancelled = await tx
+      .update(bookings)
+      .set({ status: "cancelled", cancelledAt: new Date(), cancelReason: "class_cancelled" })
+      .where(and(eq(bookings.sessionId, sessionId), eq(bookings.status, "booked")))
+      .returning({ studentId: bookings.studentId });
+    // Attended and no-show bookings keep their seat, so only the cancelled ones are released.
+    await tx
+      .update(classSessions)
+      .set({ bookedCount: sql`greatest(${classSessions.bookedCount} - ${cancelled.length}, 0)` })
+      .where(eq(classSessions.id, sessionId));
+
+    const affected = cancelled.length
+      ? await tx
+          .select({ studentId: students.id, name: users.name, phone: users.phone })
+          .from(students)
+          .innerJoin(users, eq(users.id, students.userId))
+          .where(inArray(students.id, cancelled.map((c) => c.studentId)))
+          .orderBy(users.name)
+      : [];
+    return { sessionId, startsAt: session.startsAt, bookingsCancelled: cancelled.length, affected };
+  });
+}
+
+// Cancels every class that is still scheduled on a calendar day in the studio's time zone (a holiday).
+export async function cancelDay(db: Db, studio: StudioCtx, date: string, note?: string) {
+  const { start, end, valid } = dayRange(date, date, studio.timezone);
+  if (!valid) throw new AppError(400, "invalid_date");
+  const sessions = await db
+    .select({ id: classSessions.id })
+    .from(classSessions)
+    .where(
+      and(
+        eq(classSessions.studioId, studio.id),
+        eq(classSessions.status, "scheduled"),
+        gte(classSessions.startsAt, start),
+        lt(classSessions.startsAt, end),
+      ),
+    )
+    .orderBy(classSessions.startsAt);
+  const classes: CancelledClass[] = [];
+  for (const { id } of sessions) {
+    try {
+      classes.push(await cancelSession(db, studio, id, note));
+    } catch (err) {
+      // Someone else cancelled it in the meantime: nothing left to do for that class.
+      if (!(err instanceof AppError && err.code === "session_already_cancelled")) throw err;
+    }
+  }
+  return { classesCancelled: classes.length, bookingsCancelled: classes.reduce((n, c) => n + c.bookingsCancelled, 0), classes };
 }

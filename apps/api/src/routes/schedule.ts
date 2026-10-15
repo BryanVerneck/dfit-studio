@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate, requireRole } from "../auth/guard.js";
-import { bookSeat, endEnrollment, generateSessions, loadStudio } from "../booking/service.js";
+import { bookSeat, cancelDay, cancelSession, endEnrollment, generateSessions, loadStudio } from "../booking/service.js";
 import { localDate } from "../booking/time.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
@@ -87,6 +87,21 @@ export function scheduleRoutes(config: Config, db: Db) {
         .where(and(eq(bookings.sessionId, id), eq(bookings.status, "booked")))
         .orderBy(users.name);
       return { session, roster };
+    });
+
+    // Cancels one class. Its bookings are cancelled and the response lists the students to tell.
+    app.post("/staff/sessions/:id/cancel", async (request) => {
+      const { id } = z.object({ id: uuid }).parse(request.params);
+      const body = z.object({ note: z.string().trim().max(300).optional() }).parse(request.body ?? {});
+      const studio = await loadStudio(db, request.auth!.studioId);
+      return cancelSession(db, studio, id, body.note);
+    });
+
+    // Cancels every class still scheduled on a day (a holiday).
+    app.post("/staff/sessions/cancel-day", async (request) => {
+      const body = z.object({ date: isoDate, note: z.string().trim().max(300).optional() }).parse(request.body);
+      const studio = await loadStudio(db, request.auth!.studioId);
+      return cancelDay(db, studio, body.date, body.note);
     });
 
     // Staff can book a student into a class (for example after a call to the studio).

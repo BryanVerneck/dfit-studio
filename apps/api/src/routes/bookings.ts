@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, ne, or } from "drizzle-orm";
 import { DateTime } from "luxon";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -64,6 +64,7 @@ export function bookingRoutes(config: Config, db: Db) {
           capacity: classSessions.capacity,
           bookedCount: classSessions.bookedCount,
           status: classSessions.status,
+          cancelNote: classSessions.cancelNote,
           myBookingId: bookings.id,
         })
         .from(classSessions)
@@ -75,7 +76,8 @@ export function bookingRoutes(config: Config, db: Db) {
         .where(
           and(
             eq(classSessions.studioId, studio.id),
-            ne(classSessions.status, "cancelled"),
+            // Students never see cancelled classes; staff do, so they know what was called off.
+            auth.role === "student" ? ne(classSessions.status, "cancelled") : undefined,
             gte(classSessions.startsAt, start),
             lt(classSessions.startsAt, end),
           ),
@@ -143,6 +145,8 @@ export function bookingRoutes(config: Config, db: Db) {
           source: bookings.source,
           status: bookings.status,
           replacesBookingId: bookings.replacesBookingId,
+          cancelReason: bookings.cancelReason,
+          cancelNote: classSessions.cancelNote,
           name: classSlots.name,
           startsAt: classSessions.startsAt,
           durationMin: classSlots.durationMin,
@@ -153,7 +157,8 @@ export function bookingRoutes(config: Config, db: Db) {
         .where(
           and(
             eq(bookings.studentId, student.id),
-            inArray(bookings.status, ["booked", "attended", "no_show"]),
+            // Bookings in a class that was called off stay visible, so the student knows why it vanished.
+            or(inArray(bookings.status, ["booked", "attended", "no_show"]), eq(bookings.cancelReason, "class_cancelled")),
             gte(classSessions.startsAt, start),
             lt(classSessions.startsAt, end),
           ),

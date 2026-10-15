@@ -29,6 +29,13 @@
       "when": 1792034375817,
       "tag": "0003_worthless_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792035432299,
+      "tag": "0004_ambiguous_electro",
+      "breakpoints": true
     }
   ]
 }

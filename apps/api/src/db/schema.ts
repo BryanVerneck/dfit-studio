@@ -166,6 +166,8 @@ export const classSessions = pgTable(
     capacity: integer("capacity").notNull(),
     bookedCount: integer("booked_count").notNull().default(0),
     status: sessionStatus("status").notNull().default("scheduled"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelNote: text("cancel_note"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -217,14 +219,14 @@ export const bookings = pgTable(
     idempotencyKey: text("idempotency_key"),
     createdAt: createdAt(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
-    // Why a booking was cancelled. An absence ('student', 'staff', 'swap') must not be re-booked by the
-    // fixed schedule; 'enrollment_ended' must, if the student is enrolled in that slot again.
+    // Why a booking was cancelled. The fixed schedule re-books only 'enrollment_ended' (if the student is
+    // enrolled in that slot again); every other reason is an absence or a cancelled class and stays cancelled.
     cancelReason: text("cancel_reason"),
   },
   (t) => [
     check(
       "bookings_cancel_reason_ck",
-      sql`${t.cancelReason} IS NULL OR ${t.cancelReason} IN ('student', 'staff', 'swap', 'enrollment_ended')`,
+      sql`${t.cancelReason} IS NULL OR ${t.cancelReason} IN ('student', 'staff', 'swap', 'enrollment_ended', 'class_cancelled')`,
     ),
     // A student holds at most one active seat per class.
     uniqueIndex("bookings_active_session_student_uq")

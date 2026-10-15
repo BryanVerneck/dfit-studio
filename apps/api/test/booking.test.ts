@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { DateTime } from "luxon";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { signAccessToken } from "../src/auth/tokens.js";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { agreements, classSessions, classSlots, memberships, standingEnrollments, studios, students, users } from "../src/db/schema.js";
+import { agreements, bookings, classSessions, classSlots, memberships, standingEnrollments, studios, students, users } from "../src/db/schema.js";
 
 const TZ = "America/Sao_Paulo";
 
@@ -347,5 +347,130 @@ describe.skipIf(!process.env.DATABASE_URL)("booking", () => {
     expect((await call("POST", `/staff/students/${s.studentId}/agreement`, owner.token, { weeklyLimit: 1, validFrom: "2021-01-01" })).json().error).toBe("starts_before_current_agreement");
     const usage = (await call("GET", `/me/weekly-usage?date=${tomorrow}`, s.token)).json();
     expect(usage.weeklyLimit).toBe(3);
+  });
+
+  it("cancels a class, gives the students their weekly class back, and tells staff who to contact", async () => {
+    const t = await newStudio("cancel-class");
+    const owner = await t.member("Owner", "owner");
+    const [ana, bia, caio] = await Promise.all(["Ana", "Bia", "Caio"].map((n) => t.student(n, 1)));
+    const holiday = await t.session(weekA(1, 18), 5);
+    const other = await t.session(weekA(3, 18), 5);
+    for (const s of [ana, bia, caio]) {
+      expect((await call("POST", "/bookings", s.token, { sessionId: holiday.id })).statusCode).toBe(201);
+    }
+    expect((await call("POST", "/bookings", ana.token, { sessionId: other.id })).json().error).toBe("weekly_limit_reached");
+
+    expect((await call("POST", `/staff/sessions/${holiday.id}/cancel`, ana.token, {})).statusCode).toBe(403);
+    const res = await call("POST", `/staff/sessions/${holiday.id}/cancel`, owner.token, { note: "Holiday" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().bookingsCancelled).toBe(3);
+    expect(res.json().affected.map((a: { name: string }) => a.name)).toEqual(["Ana", "Bia", "Caio"]);
+    expect(await t.reload(holiday.id)).toMatchObject({ status: "cancelled", bookedCount: 0, cancelNote: "Holiday" });
+
+    // The cancelled class no longer counts, so Ana can book another one that week.
+    expect((await call("GET", `/me/weekly-usage?date=${weekA(1).toISODate()}`, ana.token)).json().used).toBe(0);
+    expect((await call("POST", "/bookings", ana.token, { sessionId: other.id })).statusCode).toBe(201);
+    expect((await call("POST", "/bookings", bia.token, { sessionId: holiday.id })).json().error).toBe("session_cancelled");
+
+    // Students do not see the cancelled class in the schedule, staff do; students still see why a booking vanished.
+    const date = weekA(1).toISODate()!;
+    const studentView = (await call("GET", `/sessions?from=${date}&to=${date}`, caio.token)).json();
+    const staffView = (await call("GET", `/sessions?from=${date}&to=${date}`, owner.token)).json();
+    expect(studentView.map((x: { id: string }) => x.id)).not.toContain(holiday.id);
+    expect(staffView).toMatchObject([{ id: holiday.id, status: "cancelled", cancelNote: "Holiday" }]);
+    const mine = (await call("GET", "/me/bookings", caio.token)).json();
+    expect(mine).toMatchObject([{ sessionId: holiday.id, status: "cancelled", cancelReason: "class_cancelled", cancelNote: "Holiday" }]);
+
+    expect((await call("POST", `/staff/sessions/${holiday.id}/cancel`, owner.token, {})).json().error).toBe("session_already_cancelled");
+    expect((await call("POST", `/staff/sessions/${crypto.randomUUID()}/cancel`, owner.token, {})).statusCode).toBe(404);
+
+    const kept = (await call("POST", "/bookings", caio.token, { sessionId: other.id })).json().booking;
+    const swap = await call("POST", `/bookings/${kept.id}/swap`, caio.token, { toSessionId: holiday.id });
+    expect(swap.json().error).toBe("session_cancelled");
+    expect((await call("GET", "/me/bookings", caio.token)).json().filter((b: { status: string }) => b.status === "booked")).toHaveLength(1);
+  });
+
+  it("cancels every class on a day (a holiday) and leaves other days alone", async () => {
+    const t = await newStudio("cancel-day");
+    const owner = await t.member("Owner", "owner");
+    const s = await t.student("Day", 5);
+    const [morning, noon, evening] = [await t.session(weekA(2, 8)), await t.session(weekA(2, 12)), await t.session(weekA(2, 18))];
+    const nextDay = await t.session(weekA(3, 8));
+    for (const x of [morning, evening, nextDay]) {
+      expect((await call("POST", "/bookings", s.token, { sessionId: x.id })).statusCode).toBe(201);
+    }
+
+    const date = weekA(2).toISODate()!;
+    const res = await call("POST", "/staff/sessions/cancel-day", owner.token, { date, note: "Holiday" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ classesCancelled: 3, bookingsCancelled: 2 });
+    expect((await t.reload(noon.id)).status).toBe("cancelled");
+    expect(await t.reload(nextDay.id)).toMatchObject({ status: "scheduled", bookedCount: 1 });
+    expect((await call("POST", "/staff/sessions/cancel-day", owner.token, { date })).json().classesCancelled).toBe(0);
+    expect((await call("POST", "/staff/sessions/cancel-day", owner.token, { date: "tomorrow" })).statusCode).toBe(400);
+    expect((await t.reload(morning.id)).bookedCount).toBe(0);
+  });
+
+  it("does not bring a cancelled class back when sessions are generated again", async () => {
+    const t = await newStudio("cancel-gen");
+    await db.delete(classSlots).where(eq(classSlots.studioId, t.studio.id));
+    const owner = await t.member("Owner", "owner");
+    const slot = (await call("POST", "/staff/slots", owner.token, { name: "Tue 07:00", weekday: 2, startTime: "07:00", durationMin: 60, capacity: 3 })).json().slot;
+    await call("POST", "/staff/sessions/generate", owner.token, {});
+    const ana = await t.student("Ana", 3);
+    const enroll = await call("POST", `/staff/students/${ana.studentId}/standing-enrollments`, owner.token, { slotId: slot.id });
+    expect(enroll.json().generated.standingBooked).toBeGreaterThanOrEqual(3);
+
+    const mine = (await call("GET", "/me/bookings", ana.token)).json() as { sessionId: string }[];
+    const called = mine[1].sessionId;
+    expect((await call("POST", `/staff/sessions/${called}/cancel`, owner.token, {})).json().bookingsCancelled).toBe(1);
+
+    const again = (await call("POST", "/staff/sessions/generate", owner.token, {})).json();
+    expect(again).toMatchObject({ sessionsCreated: 0, standingBooked: 0 });
+    expect((await t.reload(called)).status).toBe("cancelled");
+    const after = (await call("GET", "/me/bookings", ana.token)).json() as { status: string }[];
+    expect(after.filter((b) => b.status === "booked")).toHaveLength(mine.length - 1);
+    expect(after.filter((b) => b.status === "cancelled")).toHaveLength(1);
+  });
+
+  it("stays consistent when a class is cancelled at the same moment students cancel or book", async () => {
+    const t = await newStudio("race");
+    const owner = await t.member("Owner", "owner");
+    const noServerErrors = (rs: { statusCode: number }[]) => expect(rs.filter((r) => r.statusCode >= 500)).toHaveLength(0);
+    const activeIn = async (sessionId: string) =>
+      (await db.select().from(bookings).where(and(eq(bookings.sessionId, sessionId), eq(bookings.status, "booked")))).length;
+
+    // Students cancel their own seats while staff cancel the class.
+    for (let round = 0; round < 5; round++) {
+      const session = await t.session(weekC(round, 6 + round), 6);
+      const group = await Promise.all(Array.from({ length: 6 }, (_, i) => t.student(`C${round}-${i}`, 5)));
+      const ids = await Promise.all(
+        group.map(async (g) => (await call("POST", "/bookings", g.token, { sessionId: session.id })).json().booking.id as string),
+      );
+      const results = await Promise.all([
+        call("POST", `/staff/sessions/${session.id}/cancel`, owner.token, {}),
+        ...group.map((g, i) => call("DELETE", `/bookings/${ids[i]}`, g.token)),
+      ]);
+      noServerErrors(results);
+      expect(results[0].statusCode).toBe(200);
+      expect(results.slice(1).every((r) => r.statusCode === 200 || r.json().error === "booking_not_active")).toBe(true);
+      expect(await t.reload(session.id)).toMatchObject({ status: "cancelled", bookedCount: 0 });
+      expect(await activeIn(session.id)).toBe(0);
+    }
+
+    // Students try to book while staff cancel the class: nobody may end up holding a seat in it.
+    for (let round = 0; round < 5; round++) {
+      const session = await t.session(weekC(round, 14 + round), 6);
+      const group = await Promise.all(Array.from({ length: 6 }, (_, i) => t.student(`B${round}-${i}`, 5)));
+      const results = await Promise.all([
+        call("POST", `/staff/sessions/${session.id}/cancel`, owner.token, {}),
+        ...group.map((g) => call("POST", "/bookings", g.token, { sessionId: session.id })),
+      ]);
+      noServerErrors(results);
+      expect(results[0].statusCode).toBe(200);
+      expect(results.slice(1).every((r) => r.statusCode === 201 || r.json().error === "session_cancelled")).toBe(true);
+      expect(await t.reload(session.id)).toMatchObject({ status: "cancelled", bookedCount: 0 });
+      expect(await activeIn(session.id)).toBe(0);
+    }
   });
 });
