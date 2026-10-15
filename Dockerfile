@@ -1,5 +1,6 @@
 FROM node:22-slim
-RUN corepack enable
+# Same pnpm version the lockfile was made with; newer major versions reject very recent packages.
+RUN npm install -g pnpm@10.28.0
 WORKDIR /app
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
