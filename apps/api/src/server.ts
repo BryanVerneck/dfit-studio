@@ -5,7 +5,8 @@ import { startGenerationScheduler } from "./jobs/generation.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const { db } = createDb();
-const app = buildApp({ db, config: loadConfig() });
+// Set WEB_DIR to the built web app (apps/web/dist) to serve it from this same service.
+const app = buildApp({ db, config: loadConfig(), webDir: process.env.WEB_DIR });
 
 // Creates upcoming class sessions every day. Set DISABLE_SCHEDULER=true to run it elsewhere or by hand.
 if (process.env.DISABLE_SCHEDULER !== "true") {

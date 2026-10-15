@@ -104,3 +104,11 @@ The API creates the coming weeks' class sessions, and books each student's fixed
 Forgot password: staff issue a temporary password and the student must replace it at next login. An emailed reset link is planned for a later phase.
 
 After changing `src/db/schema.ts`, run `pnpm --filter @dfit/api db:generate` to create a new migration and commit it.
+
+## Deploying
+
+The Dockerfile builds the API and the web app into one image. The API serves the web app, so both share one address and the login cookie works without any cross-site settings. On start it applies migrations and makes sure the studio and its owner exist (`start:prod`).
+
+`render.yaml` describes the setup for Render (one web service plus Postgres): New > Blueprint, pick this repository, and enter `SEED_OWNER_EMAIL` and `SEED_OWNER_PASSWORD` when asked. `JWT_SECRET` is generated and `DATABASE_URL` is wired automatically. Any host that runs a Docker image works the same way with these variables: `DATABASE_URL`, `JWT_SECRET` (32+ characters), `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`; `NODE_ENV=production`, `TRUST_PROXY=true` and `WEB_DIR` are already set in the image.
+
+Render's free plan puts the service to sleep after 15 idle minutes (the first request afterwards takes about a minute, and class sessions are generated again on wake-up) and its free database expires after 30 days, so it suits testing, not the real studio.
