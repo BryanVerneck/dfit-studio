@@ -112,3 +112,5 @@ The Dockerfile builds the API and the web app into one image. The API serves the
 `render.yaml` describes the setup for Render (one web service plus Postgres): New > Blueprint, pick this repository, and enter `SEED_OWNER_EMAIL` and `SEED_OWNER_PASSWORD` when asked. `JWT_SECRET` is generated and `DATABASE_URL` is wired automatically. Any host that runs a Docker image works the same way with these variables: `DATABASE_URL`, `JWT_SECRET` (32+ characters), `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`; `NODE_ENV=production`, `TRUST_PROXY=true` and `WEB_DIR` are already set in the image.
 
 Render's free plan puts the service to sleep after 15 idle minutes (the first request afterwards takes about a minute, and class sessions are generated again on wake-up) and its free database expires after 30 days, so it suits testing, not the real studio.
+
+To give a new deployment its first timetable, set `SEED_DEFAULT_TIMETABLE=true` (optionally `SEED_CLASS_TIMES="06:00,07:00"`, `SEED_CLASS_CAPACITY=8`, `SEED_CLASS_NAME=Treino`) and restart. It creates Monday to Friday class slots only when the studio has none, then generates the upcoming sessions. Remove the variable afterwards.
