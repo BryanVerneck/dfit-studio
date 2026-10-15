@@ -98,9 +98,14 @@ export default function HomePage() {
         <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
         <div className="flex items-center">
           {!isStudent && (
-            <Link to="/equipe/aprovacoes" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
-              Aprovações
-            </Link>
+            <>
+              <Link to="/equipe/alunos" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+                Alunos
+              </Link>
+              <Link to="/equipe/aprovacoes" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+                Aprovações
+              </Link>
+            </>
           )}
           <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
             Sair

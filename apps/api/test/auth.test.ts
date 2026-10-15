@@ -55,6 +55,7 @@ describe.skipIf(!process.env.DATABASE_URL)("login", () => {
   afterAll(async () => {
     await app.close();
     await db.execute(sql`delete from refresh_tokens where studio_id = ${studioId}`);
+    await db.execute(sql`delete from agreements where studio_id = ${studioId}`);
     await db.execute(sql`delete from students where studio_id = ${studioId}`);
     await db.execute(sql`delete from memberships where studio_id = ${studioId}`);
     await db.execute(sql`delete from users where email like ${slug + "-%"}`);
@@ -98,6 +99,21 @@ describe.skipIf(!process.env.DATABASE_URL)("login", () => {
     expect(session.json().role).toBe("student");
     const me = await app.inject({ method: "GET", url: "/me", headers: bearer(session.json().accessToken) });
     expect(me.json()).toMatchObject({ email: email("ana"), name: "Ana", mustChangePassword: false });
+  });
+
+  it("lists active students with their current weekly limit", async () => {
+    const owner = (await login("owner", "password-123")).json();
+    const list = () => app.inject({ method: "GET", url: "/staff/students", headers: bearer(owner.accessToken) });
+    const before = (await list()).json().find((s: { email: string }) => s.email === email("ana"));
+    expect(before).toMatchObject({ name: "Ana", weeklyLimit: null });
+
+    const set = await post(`/staff/students/${before.studentId}/agreement`, { weeklyLimit: 3 }, { headers: bearer(owner.accessToken) });
+    expect(set.statusCode).toBe(200);
+    const after = (await list()).json().find((s: { email: string }) => s.email === email("ana"));
+    expect(after.weeklyLimit).toBe(3);
+
+    const student = (await login("ana", "ana-password")).json();
+    expect((await app.inject({ method: "GET", url: "/staff/students", headers: bearer(student.accessToken) })).statusCode).toBe(403);
   });
 
   it("protects routes by token and by role", async () => {

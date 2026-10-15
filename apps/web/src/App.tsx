@@ -6,6 +6,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import StudentsPage from "./pages/StudentsPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/trocar-senha" element={<ChangePasswordPage />} />
         <Route element={<RequireStaff />}>
           <Route path="/equipe/aprovacoes" element={<ApprovalsPage />} />
+          <Route path="/equipe/alunos" element={<StudentsPage />} />
         </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

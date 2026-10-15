@@ -1,11 +1,13 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate, requireRole } from "../auth/guard.js";
 import { generateTemporaryPassword, hashPassword } from "../auth/password.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
-import { memberships, refreshTokens, students, users } from "../db/schema.js";
+import { localDate } from "../booking/time.js";
+import { loadStudio } from "../booking/service.js";
+import { agreements, memberships, refreshTokens, students, users } from "../db/schema.js";
 
 const params = z.object({ userId: z.string().uuid() });
 
@@ -28,6 +30,33 @@ export function staffRoutes(config: Config, db: Db) {
         .innerJoin(users, eq(users.id, memberships.userId))
         .where(and(eq(memberships.studioId, studioId), eq(memberships.status, "pending"), eq(memberships.role, "student")))
         .orderBy(memberships.createdAt);
+    });
+
+    // Active students with the weekly limit that applies today (null when no agreement covers today).
+    app.get("/staff/students", async (request) => {
+      const { studioId } = request.auth!;
+      const studio = await loadStudio(db, studioId);
+      const today = localDate(new Date(), studio.timezone);
+      const rows = await db
+        .select({ studentId: students.id, userId: users.id, name: users.name, email: users.email, phone: users.phone })
+        .from(students)
+        .innerJoin(users, eq(users.id, students.userId))
+        .where(and(eq(students.studioId, studioId), eq(students.status, "active")))
+        .orderBy(users.name);
+      const current = rows.length
+        ? await db
+            .select({ studentId: agreements.studentId, weeklyLimit: agreements.weeklyLimit })
+            .from(agreements)
+            .where(
+              and(
+                inArray(agreements.studentId, rows.map((r) => r.studentId)),
+                sql`${agreements.validFrom} <= ${today}`,
+                sql`(${agreements.validTo} is null or ${agreements.validTo} >= ${today})`,
+              ),
+            )
+        : [];
+      const limits = new Map(current.map((a) => [a.studentId, a.weeklyLimit]));
+      return rows.map((r) => ({ ...r, weeklyLimit: limits.get(r.studentId) ?? null }));
     });
 
     app.post("/staff/students/:userId/approve", async (request, reply) => {

@@ -15,3 +15,21 @@ export async function approveStudent(userId: string, weeklyLimit: number) {
   const { studentId } = await authedRequest<{ studentId: string }>(`/staff/students/${userId}/approve`, "POST");
   await authedRequest(`/staff/students/${studentId}/agreement`, "POST", { weeklyLimit });
 }
+
+export interface StudentRow {
+  studentId: string;
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  weeklyLimit: number | null;
+}
+
+export const fetchStudents = () => authedRequest<StudentRow[]>("/staff/students");
+
+export const setWeeklyLimit = (studentId: string, weeklyLimit: number) =>
+  authedRequest(`/staff/students/${studentId}/agreement`, "POST", { weeklyLimit });
+
+// The server shows the password only in this response; it is never stored in readable form.
+export const createTemporaryPassword = (userId: string) =>
+  authedRequest<{ temporaryPassword: string }>(`/staff/users/${userId}/temporary-password`, "POST");

@@ -366,3 +366,67 @@ describe("staff approvals", () => {
     expect(screen.queryByRole("link", { name: "Aprovações" })).not.toBeInTheDocument();
   });
 });
+
+describe("staff students", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+  let rows: { studentId: string; userId: string; name: string; email: string; phone: string | null; weeklyLimit: number | null }[];
+
+  beforeEach(() => {
+    rows = [
+      { studentId: "s1", userId: "u1", name: "Ana Souza", email: "ana@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s2", userId: "u2", name: "Bruno Dias", email: "bruno@x.com", phone: "11 90000-0000", weeklyLimit: null },
+    ];
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/students"] = () => ({ body: rows });
+  });
+
+  it("lists students with their limits and filters by search", async () => {
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    expect(await screen.findByText("3 aulas por semana")).toBeInTheDocument();
+    expect(screen.getByText("Sem plano definido")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "bruno");
+    expect(screen.queryByText("Ana Souza")).not.toBeInTheDocument();
+    expect(screen.getByText("Bruno Dias")).toBeInTheDocument();
+  });
+
+  it("changes a weekly limit", async () => {
+    routes["POST /staff/students/s2/agreement"] = (body) => {
+      rows = rows.map((r) => (r.studentId === "s2" ? { ...r, weeklyLimit: body.weeklyLimit } : r));
+      return { body: { agreement: {} } };
+    };
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Bruno Dias");
+    await user.click(screen.getAllByRole("button", { name: "Alterar limite" })[1]);
+    await user.selectOptions(screen.getByLabelText("Aulas por semana"), "2");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(await screen.findByText("2 aulas por semana")).toBeInTheDocument();
+    expect(await screen.findByText("Limite de Bruno Dias atualizado.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students/s2/agreement")?.body).toEqual({ weeklyLimit: 2 });
+  });
+
+  it("asks before generating a temporary password, then shows it once", async () => {
+    routes["POST /staff/users/u1/temporary-password"] = () => ({ body: { temporaryPassword: "Tmp-Pass-123" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Ana Souza");
+    await user.click(screen.getAllByRole("button", { name: "Senha temporária" })[0]);
+    expect(calls.some((c) => c.path.includes("temporary-password"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Gerar senha" }));
+    expect(await screen.findByText("Tmp-Pass-123")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByText("Tmp-Pass-123")).not.toBeInTheDocument();
+  });
+
+  it("shows an error toast when the reset is not allowed", async () => {
+    routes["POST /staff/users/u1/temporary-password"] = () => ({ status: 403, body: { error: "forbidden" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Ana Souza");
+    await user.click(screen.getAllByRole("button", { name: "Senha temporária" })[0]);
+    await user.click(screen.getByRole("button", { name: "Gerar senha" }));
+    expect(await screen.findByText("Você não tem permissão para isso.")).toBeInTheDocument();
+  });
+});
