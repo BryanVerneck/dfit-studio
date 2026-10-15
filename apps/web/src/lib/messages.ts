@@ -53,3 +53,26 @@ export function errorMessage(err: unknown): string {
       return "Algo deu errado. Tente de novo.";
   }
 }
+
+// The same errors as seen by the studio team, who act on someone else's behalf.
+export function staffErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "weekly_limit_reached":
+        return "Este aluno já usou todas as aulas desta semana.";
+      case "already_booked":
+        return "Este aluno já está nesta aula.";
+      case "no_agreement":
+        return "Este aluno ainda não tem um plano definido.";
+      case "student_inactive":
+      case "not_a_student":
+        return "Este aluno não está ativo.";
+      case "session_already_cancelled":
+        return "Esta aula já foi cancelada.";
+      case "booking_not_found":
+      case "booking_not_active":
+        return "Esta reserva não existe mais.";
+    }
+  }
+  return errorMessage(err);
+}

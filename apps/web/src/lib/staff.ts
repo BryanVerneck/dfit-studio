@@ -51,3 +51,17 @@ export interface ClassDetail {
 }
 
 export const fetchClassDetail = (sessionId: string) => authedRequest<ClassDetail>(`/staff/sessions/${sessionId}/roster`);
+
+export const addStudentToClass = (sessionId: string, studentId: string) =>
+  authedRequest<{ booking: { id: string } }>("/staff/bookings", "POST", { sessionId, studentId });
+
+export const removeBooking = (bookingId: string) => authedRequest<{ booking: { id: string } }>(`/bookings/${bookingId}`, "DELETE");
+
+export interface CancelledClass {
+  bookingsCancelled: number;
+  affected: { studentId: string; name: string; phone: string | null }[];
+}
+
+// Calls off one class. The answer lists the students who had a seat, so the studio can tell them.
+export const cancelClass = (sessionId: string, note?: string) =>
+  authedRequest<CancelledClass>(`/staff/sessions/${sessionId}/cancel`, "POST", note ? { note } : {});

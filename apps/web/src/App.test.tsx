@@ -483,6 +483,94 @@ describe("class detail for staff", () => {
     renderAt("/equipe/aulas/nope");
     expect(await screen.findByRole("alert")).toHaveTextContent("Aula não encontrada.");
   });
+
+  describe("actions", () => {
+    let roster: { bookingId: string; studentId: string; name: string; phone: string | null; source: string }[];
+    let status: string;
+    const everyone = [
+      { studentId: "s1", userId: "u1", name: "Ana Souza", email: "ana@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s2", userId: "u2", name: "Bruno Dias", email: "bruno@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s3", userId: "u3", name: "Carla Lima", email: "carla@x.com", phone: "11 95555-5555", weeklyLimit: 3 },
+    ];
+
+    beforeEach(() => {
+      status = "scheduled";
+      roster = [
+        { bookingId: "b1", studentId: "s1", name: "Ana Souza", phone: "11 91111-1111", source: "standing" },
+        { bookingId: "b2", studentId: "s2", name: "Bruno Dias", phone: null, source: "one_off" },
+      ];
+      routes["GET /staff/sessions/c1/roster"] = () => ({
+        body: { session: { id: "c1", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", capacity: 8, bookedCount: roster.length, status }, roster },
+      });
+      routes["GET /staff/students"] = () => ({ body: everyone });
+    });
+
+    it("adds a student who is not in the class yet", async () => {
+      routes["POST /staff/bookings"] = (body) => {
+        const s = everyone.find((e) => e.studentId === body.studentId)!;
+        roster = [...roster, { bookingId: "b3", studentId: s.studentId, name: s.name, phone: s.phone, source: "one_off" }];
+        return { status: 201, body: { booking: { id: "b3" } } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Adicionar aluno" }));
+      expect(await screen.findByRole("button", { name: "Adicionar Carla Lima" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Adicionar Ana Souza" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Adicionar Carla Lima" }));
+      expect(await screen.findByText("3 de 8")).toBeInTheDocument();
+      expect(calls.find((c) => c.path === "/staff/bookings")?.body).toEqual({ sessionId: "c1", studentId: "s3" });
+    });
+
+    it("explains when the student cannot take another class", async () => {
+      routes["POST /staff/bookings"] = () => ({ status: 409, body: { error: "weekly_limit_reached" } });
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Adicionar aluno" }));
+      await user.click(await screen.findByRole("button", { name: "Adicionar Carla Lima" }));
+      expect((await screen.findAllByText("Este aluno já usou todas as aulas desta semana.")).length).toBeGreaterThan(0);
+      expect(screen.getByText("2 de 8")).toBeInTheDocument();
+    });
+
+    it("removes a student after confirmation", async () => {
+      routes["DELETE /bookings/b2"] = () => {
+        roster = roster.filter((r) => r.bookingId !== "b2");
+        return { body: { booking: { id: "b2" } } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click((await screen.findAllByRole("button", { name: "Remover" }))[1]);
+      expect(calls.some((c) => c.path === "/bookings/b2")).toBe(false);
+      await user.click(screen.getByRole("button", { name: "Sim, remover" }));
+      expect(await screen.findByText("1 de 8")).toBeInTheDocument();
+      expect(screen.queryByText("Bruno Dias")).not.toBeInTheDocument();
+    });
+
+    it("cancels the class and lists the students to tell", async () => {
+      routes["POST /staff/sessions/c1/cancel"] = (body) => {
+        status = "cancelled";
+        const affected = roster.map((r) => ({ studentId: r.studentId, name: r.name, phone: r.phone }));
+        roster = [];
+        return { body: { sessionId: "c1", bookingsCancelled: affected.length, affected, note: body.note } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Cancelar aula" }));
+      await user.type(screen.getByLabelText(/Motivo/), "Feriado");
+      await user.click(screen.getByRole("button", { name: "Sim, cancelar aula" }));
+      expect(await screen.findByText("Avise estes 2 alunos:")).toBeInTheDocument();
+      expect(screen.getByText(/11 91111-1111/)).toBeInTheDocument();
+      expect(calls.find((c) => c.path === "/staff/sessions/c1/cancel")?.body).toEqual({ note: "Feriado" });
+      expect(screen.queryByRole("button", { name: "Adicionar aluno" })).not.toBeInTheDocument();
+    });
+
+    it("offers no actions for a class that was already cancelled", async () => {
+      status = "cancelled";
+      roster = [];
+      renderAt("/equipe/aulas/c1");
+      expect(await screen.findByText("Aula cancelada")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancelar aula" })).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe("new student", () => {
