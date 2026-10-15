@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { MemoryRouter } from "react-router";
@@ -17,13 +17,13 @@ const session = (mustChangePassword = false) => ({ accessToken: "tok", expiresIn
 beforeEach(() => {
   setAccessToken(null);
   calls = [];
-  routes = { "POST /auth/refresh": () => ({ status: 401, body: { error: "unauthorized" } }) };
+  routes = { "POST /auth/refresh": () => ({ status: 401, body: { error: "unauthorized" } }), "GET /sessions": () => ({ body: [] }), "GET /me/weekly-usage": () => ({ body: { weekStart: "x", used: 0, weeklyLimit: 3, remaining: 3 } }) };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init: RequestInit = {}) => {
       const body = init.body ? JSON.parse(init.body as string) : undefined;
       calls.push({ path, body });
-      const handler = routes[`${init.method ?? "GET"} ${path}`];
+      const handler = routes[`${init.method ?? "GET"} ${path}`] ?? routes[`${init.method ?? "GET"} ${path.split("?")[0]}`];
       const res = handler ? handler(body) : { status: 404, body: { error: "not_found" } };
       return new Response(JSON.stringify(res.body ?? {}), { status: res.status ?? 200, headers: { "content-type": "application/json" } });
     }),
@@ -171,5 +171,82 @@ describe("signup", () => {
     renderAt("/cadastro");
     await fill(userEvent.setup());
     expect(await screen.findByRole("alert")).toHaveTextContent("Já existe uma conta com este e-mail.");
+  });
+});
+
+describe("week view", () => {
+  // Wednesday 14 Oct 2026, 09:00 in São Paulo.
+  const at = (hour: string, day = "2026-10-14") => `${day}T${hour}:00-03:00`;
+  const klass = (id: string, startsAt: string, extra = {}) => ({
+    id, slotId: "sl", name: "Treino", startsAt, durationMin: 60, capacity: 8, spotsLeft: 4, status: "scheduled", cancelNote: null, myBookingId: null, ...extra,
+  });
+  let list: any[];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-14T12:00:00Z") });
+    list = [klass("a", at("07:00")), klass("b", at("18:00")), klass("c", at("19:00"), { spotsLeft: 0 }), klass("d", at("07:00", "2026-10-15"))];
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    routes["GET /me/weekly-usage?date=2026-10-12"] = () => ({ body: { weekStart: "2026-10-12", used: 1, weeklyLimit: 3, remaining: 2 } });
+    routes["GET /sessions?from=2026-10-12&to=2026-10-18"] = () => ({ body: list });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("shows today's classes with spots and the weekly usage", async () => {
+    renderAt("/");
+    expect(await screen.findByText("Você usou 1 de 3 aulas nesta semana.")).toBeInTheDocument();
+    expect(await screen.findByText("07:00")).toBeInTheDocument();
+    expect(screen.getAllByText("4 vagas").length).toBeGreaterThan(0);
+    expect(screen.getByText("Lotada")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sem vagas" })).toBeDisabled();
+    expect(screen.queryByText("07:00", { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("switches day", async () => {
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await screen.findByText("18:00");
+    await user.click(screen.getByRole("tab", { name: /Quinta-feira/ }));
+    expect(screen.queryByText("18:00")).not.toBeInTheDocument();
+    expect(screen.getByText("07:00")).toBeInTheDocument();
+  });
+
+  it("books a class and shows it as booked", async () => {
+    routes["POST /bookings"] = (body) => {
+      list = list.map((s) => (s.id === body.sessionId ? { ...s, spotsLeft: 3, myBookingId: "bk1" } : s));
+      return { status: 201, body: { booking: { id: "bk1" } } };
+    };
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await screen.findByText("18:00");
+    await user.click(screen.getByRole("button", { name: "Reservar" }));
+    expect(await screen.findByText("✓ Você está nesta aula")).toBeInTheDocument();
+    const call = calls.find((c) => c.path === "/bookings");
+    expect(call?.body).toMatchObject({ sessionId: "b" });
+    expect(call?.body.idempotencyKey).toBeTruthy();
+  });
+
+  it("explains a failed booking and refreshes the list", async () => {
+    routes["POST /bookings"] = () => {
+      list = list.map((s) => (s.id === "b" ? { ...s, spotsLeft: 0 } : s));
+      return { status: 409, body: { error: "class_full" } };
+    };
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await screen.findByText("18:00");
+    await user.click(screen.getByRole("button", { name: "Reservar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Esta aula já está lotada.");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Sem vagas" })).toHaveLength(2));
+  });
+
+  it("loads another week", async () => {
+    routes["GET /me/weekly-usage?date=2026-10-19"] = () => ({ body: { weekStart: "2026-10-19", used: 0, weeklyLimit: 3, remaining: 3 } });
+    routes["GET /sessions?from=2026-10-19&to=2026-10-25"] = () => ({ body: [] });
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await screen.findByText("18:00");
+    await user.click(screen.getByRole("button", { name: "Próxima semana" }));
+    expect(await screen.findByText("Nenhuma aula neste dia.")).toBeInTheDocument();
+    expect(screen.getByText("Você usou 0 de 3 aulas nesta semana.")).toBeInTheDocument();
   });
 });

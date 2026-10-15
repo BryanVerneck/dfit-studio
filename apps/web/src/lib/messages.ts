@@ -20,6 +20,23 @@ export function errorMessage(err: unknown): string {
       return "Estúdio não encontrado. Fale com o estúdio.";
     case "invalid_request":
       return "Confira os dados e tente de novo.";
+    case "class_full":
+      return "Esta aula já está lotada.";
+    case "already_booked":
+      return "Você já está nesta aula.";
+    case "weekly_limit_reached":
+      return "Você já usou todas as aulas desta semana.";
+    case "no_agreement":
+      return "Seu plano ainda não foi configurado. Fale com o estúdio.";
+    case "class_started":
+      return "Esta aula já começou.";
+    case "session_cancelled":
+      return "Esta aula foi cancelada.";
+    case "outside_booking_window":
+      return "Ainda não é possível reservar esta data.";
+    case "student_inactive":
+    case "not_a_student":
+      return "Sua conta não pode reservar aulas. Fale com o estúdio.";
     default:
       return "Algo deu errado. Tente de novo.";
   }
