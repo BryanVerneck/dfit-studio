@@ -50,7 +50,7 @@ describe.skipIf(!process.env.DATABASE_URL)("database rules", () => {
     for (let i = 0; i < 20; i++) {
       const [user] = await db
         .insert(users)
-        .values({ email: `${slug}-${i}@example.com`, name: `Student ${i}` })
+        .values({ email: `${slug}-${i}@example.com`, name: `Student ${i}`, passwordHash: "x" })
         .returning();
       const [student] = await db.insert(students).values({ studioId, userId: user.id }).returning();
       studentIds.push(student.id);

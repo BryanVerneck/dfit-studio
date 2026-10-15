@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   date,
   index,
@@ -53,8 +54,28 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   phone: text("phone"),
   gender: text("gender"),
+  passwordHash: text("password_hash").notNull(),
+  // Set when staff issue a temporary password; the user must choose a new one before doing anything else.
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: createdAt(),
 });
+
+// Long-lived login tokens. Only a hash is stored; each use rotates the token.
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    studioId: studioId(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("refresh_tokens_user_idx").on(t.userId)],
+);
 
 export const memberships = pgTable(
   "memberships",
