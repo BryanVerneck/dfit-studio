@@ -33,3 +33,10 @@ export const setWeeklyLimit = (studentId: string, weeklyLimit: number) =>
 // The server shows the password only in this response; it is never stored in readable form.
 export const createTemporaryPassword = (userId: string) =>
   authedRequest<{ temporaryPassword: string }>(`/staff/users/${userId}/temporary-password`, "POST");
+
+export interface ClassDetail {
+  session: { id: string; name: string; startsAt: string; capacity: number; bookedCount: number; status: "scheduled" | "cancelled" | "completed" };
+  roster: { bookingId: string; studentId: string; name: string; phone: string | null; source: "standing" | "one_off" }[];
+}
+
+export const fetchClassDetail = (sessionId: string) => authedRequest<ClassDetail>(`/staff/sessions/${sessionId}/roster`);

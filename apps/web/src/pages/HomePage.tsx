@@ -200,6 +200,14 @@ export default function HomePage() {
                     {full ? "Lotada" : `${s.spotsLeft} ${s.spotsLeft === 1 ? "vaga" : "vagas"}`}
                   </p>
                 </div>
+                {!isStudent && (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    {s.status === "cancelled" ? <p className="text-sm font-medium text-danger">Aula cancelada</p> : <span />}
+                    <Link to={`/equipe/aulas/${s.id}`} className="rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:border-brand-light">
+                      Ver alunos
+                    </Link>
+                  </div>
+                )}
                 {isStudent && (
                   <div className="mt-3">
                     {mine && !started ? (

@@ -430,3 +430,48 @@ describe("staff students", () => {
     expect(await screen.findByText("Você não tem permissão para isso.")).toBeInTheDocument();
   });
 });
+
+describe("class detail for staff", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-14T12:00:00Z") });
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("opens a class from the schedule and lists its students", async () => {
+    routes["GET /sessions"] = () => ({
+      body: [
+        { id: "c1", slotId: "sl", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", durationMin: 60, capacity: 8, spotsLeft: 6, status: "scheduled", cancelNote: null, myBookingId: null },
+        { id: "c2", slotId: "sl", name: "Treino", startsAt: "2026-10-14T22:00:00-03:00", durationMin: 60, capacity: 8, spotsLeft: 8, status: "cancelled", cancelNote: null, myBookingId: null },
+      ],
+    });
+    routes["GET /staff/sessions/c1/roster"] = () => ({
+      body: {
+        session: { id: "c1", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", capacity: 8, bookedCount: 2, status: "scheduled" },
+        roster: [
+          { bookingId: "b1", studentId: "s1", name: "Ana Souza", phone: "11 91111-1111", source: "standing" },
+          { bookingId: "b2", studentId: "s2", name: "Bruno Dias", phone: null, source: "one_off" },
+        ],
+      },
+    });
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    expect(await screen.findByText("Aula cancelada")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reservar" })).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("link", { name: "Ver alunos" })[0]);
+    expect(await screen.findByRole("heading", { name: "21:00 · Treino" })).toBeInTheDocument();
+    expect(screen.getByText("2 de 8")).toBeInTheDocument();
+    expect(screen.getByText("Ana Souza")).toBeInTheDocument();
+    expect(screen.getByText("Horário fixo")).toBeInTheDocument();
+    expect(screen.getByText("Avulsa")).toBeInTheDocument();
+  });
+
+  it("shows an error when the class does not exist", async () => {
+    routes["GET /staff/sessions/nope/roster"] = () => ({ status: 404, body: { error: "session_not_found" } });
+    renderAt("/equipe/aulas/nope");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Aula não encontrada.");
+  });
+});

@@ -30,6 +30,8 @@ export function errorMessage(err: unknown): string {
       return "Este cadastro não está mais pendente.";
     case "forbidden":
       return "Você não tem permissão para isso.";
+    case "session_not_found":
+      return "Aula não encontrada.";
     case "class_full":
       return "Esta aula já está lotada.";
     case "already_booked":
