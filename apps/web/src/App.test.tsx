@@ -268,6 +268,37 @@ describe("week view", () => {
     expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
   });
 
+  it("swaps a booking to another class", async () => {
+    list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1", spotsLeft: 3 } : s));
+    routes["POST /bookings/bk1/swap"] = (body) => {
+      list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: null, spotsLeft: 4 } : s.id === body.toSessionId ? { ...s, myBookingId: "bk2" } : s));
+      return { status: 201, body: { booking: { id: "bk2" } } };
+    };
+    list = [...list, klass("e", at("20:00"), { spotsLeft: 2 })];
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("button", { name: "Trocar" }));
+    expect(screen.getByText(/Trocando a aula de quarta-feira às 18:00/)).toBeInTheDocument();
+    expect(screen.getByText("Aula atual")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Trocar para esta" }));
+    expect(await screen.findByText("✓ Você está nesta aula")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/bookings/bk1/swap")?.body).toMatchObject({ toSessionId: "e" });
+    expect(screen.queryByText(/Trocando a aula/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the original class when the swap fails", async () => {
+    list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1" } : s));
+    list = [...list, klass("e", at("20:00"))];
+    routes["POST /bookings/bk1/swap"] = () => ({ status: 409, body: { error: "weekly_limit_reached" } });
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("button", { name: "Trocar" }));
+    await user.click(screen.getByRole("button", { name: "Trocar para esta" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Você já usou todas as aulas desta semana.");
+    await user.click(screen.getByRole("button", { name: "Desistir da troca" }));
+    expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
+  });
+
   it("loads another week", async () => {
     routes["GET /me/weekly-usage?date=2026-10-19"] = () => ({ body: { weekStart: "2026-10-19", used: 0, weeklyLimit: 3, remaining: 3 } });
     routes["GET /sessions?from=2026-10-19&to=2026-10-25"] = () => ({ body: [] });

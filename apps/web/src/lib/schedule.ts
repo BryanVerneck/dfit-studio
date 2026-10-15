@@ -28,3 +28,6 @@ export const bookClass = (sessionId: string) =>
   authedRequest<{ booking: { id: string } }>("/bookings", "POST", { sessionId, idempotencyKey: crypto.randomUUID() });
 
 export const cancelBooking = (bookingId: string) => authedRequest<{ booking: { id: string } }>(`/bookings/${bookingId}`, "DELETE");
+
+export const swapBooking = (bookingId: string, toSessionId: string) =>
+  authedRequest<{ booking: { id: string } }>(`/bookings/${bookingId}/swap`, "POST", { toSessionId, idempotencyKey: crypto.randomUUID() });

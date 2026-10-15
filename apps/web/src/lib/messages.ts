@@ -24,6 +24,8 @@ export function errorMessage(err: unknown): string {
       return "Já passou do prazo para cancelar esta aula. Fale com o estúdio.";
     case "booking_not_active":
       return "Esta reserva já foi cancelada.";
+    case "same_session":
+      return "Escolha uma aula diferente da atual.";
     case "class_full":
       return "Esta aula já está lotada.";
     case "already_booked":
