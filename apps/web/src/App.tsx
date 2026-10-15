@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router";
 import { AppToaster } from "./components/AppToaster";
-import { PublicOnly, RequireAuth } from "./auth/guards";
+import { PublicOnly, RequireAuth, RequireStaff } from "./auth/guards";
+import ApprovalsPage from "./pages/ApprovalsPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
@@ -18,6 +19,9 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/trocar-senha" element={<ChangePasswordPage />} />
+        <Route element={<RequireStaff />}>
+          <Route path="/equipe/aprovacoes" element={<ApprovalsPage />} />
+        </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

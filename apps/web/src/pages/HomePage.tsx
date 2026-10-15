@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { Alert } from "../components/Alert";
 import logo from "../assets/logo.png";
@@ -95,9 +96,16 @@ export default function HomePage() {
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
         <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
-        <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
-          Sair
-        </button>
+        <div className="flex items-center">
+          {!isStudent && (
+            <Link to="/equipe/aprovacoes" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+              Aprovações
+            </Link>
+          )}
+          <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+            Sair
+          </button>
+        </div>
       </header>
 
       <h1 className="mt-6 text-2xl font-semibold">Olá, {state.user.name.split(" ")[0]}</h1>

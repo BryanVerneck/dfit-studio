@@ -313,3 +313,56 @@ describe("week view", () => {
     expect(screen.getByText("Você usou 0 de 3 aulas nesta semana.")).toBeInTheDocument();
   });
 });
+
+describe("staff approvals", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+  const pendingList = [{ userId: "u9", name: "Novo Aluno", email: "novo@x.com", phone: "11 99999-0000", requestedAt: "2026-10-14T12:00:00Z" }];
+  let pending: typeof pendingList;
+
+  beforeEach(() => {
+    pending = [...pendingList];
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/pending-students"] = () => ({ body: pending });
+  });
+
+  it("approves a student with a weekly limit", async () => {
+    routes["POST /staff/students/u9/approve"] = () => {
+      pending = [];
+      return { body: { studentId: "s9" } };
+    };
+    routes["POST /staff/students/s9/agreement"] = () => ({ body: { agreement: {} } });
+    renderAt("/equipe/aprovacoes");
+    const user = userEvent.setup();
+    expect(await screen.findByText("Novo Aluno")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aprovar" }));
+    await user.selectOptions(screen.getByLabelText("Aulas por semana"), "4");
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    expect(await screen.findByText("Novo Aluno foi aprovado(a).")).toBeInTheDocument();
+    expect(await screen.findByText("Nenhum cadastro pendente.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students/s9/agreement")?.body).toEqual({ weeklyLimit: 4 });
+  });
+
+  it("shows a message when the signup is no longer pending", async () => {
+    routes["POST /staff/students/u9/approve"] = () => ({ status: 404, body: { error: "pending_student_not_found" } });
+    renderAt("/equipe/aprovacoes");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Aprovar" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    expect(await screen.findByText("Este cadastro não está mais pendente.")).toBeInTheDocument();
+  });
+
+  it("links to approvals from the home page for staff only", async () => {
+    routes["GET /sessions"] = () => ({ body: [] });
+    renderAt("/");
+    expect(await screen.findByRole("link", { name: "Aprovações" })).toBeInTheDocument();
+  });
+
+  it("sends students away from the approvals page", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    renderAt("/equipe/aprovacoes");
+    expect(await screen.findByRole("heading", { name: "Olá, Ana" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Aprovações" })).not.toBeInTheDocument();
+  });
+});

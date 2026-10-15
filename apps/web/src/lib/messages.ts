@@ -26,6 +26,10 @@ export function errorMessage(err: unknown): string {
       return "Esta reserva já foi cancelada.";
     case "same_session":
       return "Escolha uma aula diferente da atual.";
+    case "pending_student_not_found":
+      return "Este cadastro não está mais pendente.";
+    case "forbidden":
+      return "Você não tem permissão para isso.";
     case "class_full":
       return "Esta aula já está lotada.";
     case "already_booked":
