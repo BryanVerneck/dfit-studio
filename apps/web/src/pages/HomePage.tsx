@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { Alert } from "../components/Alert";
 import logo from "../assets/logo.png";
-import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, mondayOf, weekdayLong, weekdayShort } from "../lib/dates";
+import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, sundayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
 import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
@@ -11,7 +11,7 @@ import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type 
 export default function HomePage() {
   const { state, logout } = useAuth();
   const today = dayKey(new Date());
-  const [weekStart, setWeekStart] = useState(() => mondayOf(today));
+  const [weekStart, setWeekStart] = useState(() => sundayOf(today));
   const [selected, setSelected] = useState(today);
   const [sessions, setSessions] = useState<ClassSession[] | null>(null);
   const [usage, setUsage] = useState<WeeklyUsage | null>(null);
@@ -27,7 +27,7 @@ export default function HomePage() {
     try {
       const [list, used] = await Promise.all([
         fetchSessions(weekStart, addDays(weekStart, 6)),
-        isStudent ? fetchUsage(weekStart) : Promise.resolve(null),
+        isStudent ? fetchUsage(addDays(weekStart, 1)) : Promise.resolve(null),
       ]);
       setSessions(list);
       setUsage(used);
@@ -45,7 +45,7 @@ export default function HomePage() {
   function changeWeek(delta: number) {
     const next = addDays(weekStart, delta * 7);
     setWeekStart(next);
-    setSelected(next === mondayOf(today) ? today : next);
+    setSelected(next === sundayOf(today) ? today : next);
   }
 
   async function book(session: ClassSession) {

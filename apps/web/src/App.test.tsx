@@ -188,7 +188,7 @@ describe("week view", () => {
     routes["POST /auth/refresh"] = () => ({ body: session() });
     routes["GET /me"] = () => ({ body: me });
     routes["GET /me/weekly-usage?date=2026-10-12"] = () => ({ body: { weekStart: "2026-10-12", used: 1, weeklyLimit: 3, remaining: 2 } });
-    routes["GET /sessions?from=2026-10-12&to=2026-10-18"] = () => ({ body: list });
+    routes["GET /sessions?from=2026-10-11&to=2026-10-17"] = () => ({ body: list });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -200,6 +200,13 @@ describe("week view", () => {
     expect(screen.getByText("Lotada")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sem vagas" })).toBeDisabled();
     expect(screen.queryByText("07:00", { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("lists the week from Sunday to Saturday", async () => {
+    renderAt("/");
+    await screen.findByText("18:00");
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs).toEqual(["dom11", "seg12", "ter13", "qua14", "qui15", "sex16", "sáb17"]);
   });
 
   it("switches day", async () => {
@@ -304,7 +311,7 @@ describe("week view", () => {
 
   it("loads another week", async () => {
     routes["GET /me/weekly-usage?date=2026-10-19"] = () => ({ body: { weekStart: "2026-10-19", used: 0, weeklyLimit: 3, remaining: 3 } });
-    routes["GET /sessions?from=2026-10-19&to=2026-10-25"] = () => ({ body: [] });
+    routes["GET /sessions?from=2026-10-18&to=2026-10-24"] = () => ({ body: [] });
     renderAt("/");
     const user = userEvent.setup({ advanceTimers: () => {} });
     await screen.findByText("18:00");
