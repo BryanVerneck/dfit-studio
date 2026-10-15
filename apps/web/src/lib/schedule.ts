@@ -26,3 +26,5 @@ export const fetchUsage = (date: string) => authedRequest<WeeklyUsage>(`/me/week
 // One key per click, so a retry after a dropped connection can never book twice.
 export const bookClass = (sessionId: string) =>
   authedRequest<{ booking: { id: string } }>("/bookings", "POST", { sessionId, idempotencyKey: crypto.randomUUID() });
+
+export const cancelBooking = (bookingId: string) => authedRequest<{ booking: { id: string } }>(`/bookings/${bookingId}`, "DELETE");

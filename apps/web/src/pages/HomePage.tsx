@@ -4,7 +4,7 @@ import { Alert } from "../components/Alert";
 import logo from "../assets/logo.png";
 import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, mondayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
-import { bookClass, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
+import { bookClass, cancelBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
 
 export default function HomePage() {
   const { state, logout } = useAuth();
@@ -16,6 +16,7 @@ export default function HomePage() {
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [booking, setBooking] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const isStudent = state.status === "authenticated" && state.user.role === "student";
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -55,6 +56,19 @@ export default function HomePage() {
       setActionError(errorMessage(err));
     }
     // Always reload: after a failure (for example a full class) the list shows the real situation.
+    await load();
+    setBooking(null);
+  }
+
+  async function cancel(session: ClassSession) {
+    setBooking(session.id);
+    setActionError("");
+    try {
+      await cancelBooking(session.myBookingId!);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
+    setConfirming(null);
     await load();
     setBooking(null);
   }
@@ -144,8 +158,39 @@ export default function HomePage() {
                 </div>
                 {isStudent && (
                   <div className="mt-3">
-                    {mine ? (
-                      <p className="text-sm font-medium text-brand-light">✓ Você está nesta aula</p>
+                    {mine && !started ? (
+                      confirming === s.id ? (
+                        <div role="group" aria-label="Confirmar cancelamento">
+                          <p className="mb-2 text-sm">Cancelar sua reserva?</p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={booking !== null}
+                              onClick={() => void cancel(s)}
+                              className="flex-1 rounded-lg bg-danger px-4 py-2.5 font-semibold text-ink disabled:opacity-50"
+                            >
+                              {booking === s.id ? "Cancelando…" : "Sim, cancelar"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={booking !== null}
+                              onClick={() => setConfirming(null)}
+                              className="flex-1 rounded-lg border border-line px-4 py-2.5 font-semibold hover:border-brand-light disabled:opacity-50"
+                            >
+                              Manter
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-brand-light">✓ Você está nesta aula</p>
+                          <button type="button" onClick={() => setConfirming(s.id)} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
+                            Cancelar
+                          </button>
+                        </div>
+                      )
+                    ) : mine ? (
+                      <p className="text-sm font-medium text-brand-light">✓ Você esteve nesta aula</p>
                     ) : started ? (
                       <p className="text-sm text-muted">Aula encerrada</p>
                     ) : (

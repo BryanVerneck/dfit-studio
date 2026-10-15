@@ -239,6 +239,35 @@ describe("week view", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Sem vagas" })).toHaveLength(2));
   });
 
+  it("cancels a booking after confirmation", async () => {
+    list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1", spotsLeft: 3 } : s));
+    routes["DELETE /bookings/bk1"] = () => {
+      list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: null, spotsLeft: 4 } : s));
+      return { body: { booking: { id: "bk1" } } };
+    };
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await screen.findByText("✓ Você está nesta aula");
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Manter" }));
+    expect(calls.some((c) => c.path === "/bookings/bk1")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+    expect(await screen.findByRole("button", { name: "Reservar" })).toBeInTheDocument();
+    expect(screen.queryByText("✓ Você está nesta aula")).not.toBeInTheDocument();
+  });
+
+  it("explains when it is too late to cancel", async () => {
+    list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1" } : s));
+    routes["DELETE /bookings/bk1"] = () => ({ status: 409, body: { error: "too_late_to_cancel" } });
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Já passou do prazo para cancelar");
+    expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
+  });
+
   it("loads another week", async () => {
     routes["GET /me/weekly-usage?date=2026-10-19"] = () => ({ body: { weekStart: "2026-10-19", used: 0, weeklyLimit: 3, remaining: 3 } });
     routes["GET /sessions?from=2026-10-19&to=2026-10-25"] = () => ({ body: [] });
