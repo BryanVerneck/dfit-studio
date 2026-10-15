@@ -4,7 +4,7 @@ import { Alert } from "../components/Alert";
 import logo from "../assets/logo.png";
 import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, mondayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
-import { bookClass, cancelBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
+import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
 
 export default function HomePage() {
   const { state, logout } = useAuth();
@@ -17,6 +17,7 @@ export default function HomePage() {
   const [actionError, setActionError] = useState("");
   const [booking, setBooking] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [swapFrom, setSwapFrom] = useState<ClassSession | null>(null);
 
   const isStudent = state.status === "authenticated" && state.user.role === "student";
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -56,6 +57,19 @@ export default function HomePage() {
       setActionError(errorMessage(err));
     }
     // Always reload: after a failure (for example a full class) the list shows the real situation.
+    await load();
+    setBooking(null);
+  }
+
+  async function swap(target: ClassSession) {
+    setBooking(target.id);
+    setActionError("");
+    try {
+      await swapBooking(swapFrom!.myBookingId!, target.id);
+      setSwapFrom(null);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
     await load();
     setBooking(null);
   }
@@ -134,6 +148,16 @@ export default function HomePage() {
       </h2>
 
       <div className="mt-3" aria-live="polite">
+        {swapFrom && (
+          <div className="mb-3 rounded-lg border border-brand-light/60 bg-brand/10 p-3 text-sm">
+            <p>
+              Trocando a aula de {weekdayLong(dayKey(swapFrom.startsAt)).toLowerCase()} às {formatTime(swapFrom.startsAt)}. Escolha a nova aula.
+            </p>
+            <button type="button" onClick={() => setSwapFrom(null)} className="mt-2 underline">
+              Desistir da troca
+            </button>
+          </div>
+        )}
         {actionError && <Alert>{actionError}</Alert>}
         {loadError && <Alert>{loadError}</Alert>}
         {!loadError && sessions === null && <p className="text-muted">Carregando aulas…</p>}
@@ -183,10 +207,17 @@ export default function HomePage() {
                         </div>
                       ) : (
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-brand-light">✓ Você está nesta aula</p>
-                          <button type="button" onClick={() => setConfirming(s.id)} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
+                          <p className="text-sm font-medium text-brand-light">{swapFrom?.id === s.id ? "Aula atual" : "✓ Você está nesta aula"}</p>
+                          {!swapFrom && (
+                            <button type="button" onClick={() => { setSwapFrom(s); setConfirming(null); setActionError(""); }} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
+                              Trocar
+                            </button>
+                          )}
+                          {!swapFrom && (
+                            <button type="button" onClick={() => setConfirming(s.id)} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
                             Cancelar
                           </button>
+                          )}
                         </div>
                       )
                     ) : mine ? (
@@ -197,10 +228,10 @@ export default function HomePage() {
                       <button
                         type="button"
                         disabled={full || booking !== null}
-                        onClick={() => void book(s)}
+                        onClick={() => void (swapFrom ? swap(s) : book(s))}
                         className="w-full rounded-lg bg-linear-to-r from-brand to-violet px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:opacity-50"
                       >
-                        {booking === s.id ? "Reservando…" : full ? "Sem vagas" : "Reservar"}
+                        {booking === s.id ? (swapFrom ? "Trocando…" : "Reservando…") : full ? "Sem vagas" : swapFrom ? "Trocar para esta" : "Reservar"}
                       </button>
                     )}
                   </div>
