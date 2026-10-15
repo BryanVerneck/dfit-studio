@@ -4,6 +4,7 @@ Class scheduling for Dfit Studio. Monorepo managed with pnpm workspaces.
 
 ## Layout
 
+- `apps/web`: React + TypeScript web app (Vite, Tailwind CSS), set up as an installable PWA. Currently a placeholder page.
 - `apps/api`: Node.js + TypeScript backend (Fastify) with a PostgreSQL schema managed by Drizzle.
   - `src/db/schema.ts`: tables for studios, users, memberships, students, agreements, class slots, class sessions, standing enrollments and bookings.
   - `drizzle/`: generated SQL migrations.
@@ -22,6 +23,19 @@ pnpm --filter @dfit/api dev
 ```
 
 Then open http://localhost:3000/health.
+
+## Web app
+
+```sh
+pnpm dev:api    # backend on http://localhost:3000
+pnpm dev:web    # web app on http://localhost:5173
+pnpm --filter @dfit/web test
+pnpm --filter @dfit/web build
+```
+
+In development the browser only talks to the web dev server, which forwards the API routes (`/auth`, `/me`, `/sessions`, `/bookings`, `/staff`, `/health`) to the backend. Keeping a single origin means the login cookie works exactly as it will in production. Set `API_URL` to point at a backend other than `http://localhost:3000`.
+
+The app is an installable PWA: `pnpm --filter @dfit/web build` generates the web manifest and a service worker, and `pnpm --filter @dfit/web preview` serves that production build. The service worker never caches API responses, so spots left and bookings are always current. The icons in `apps/web/public` are placeholders to replace with Dfit's logo.
 
 ## Login
 

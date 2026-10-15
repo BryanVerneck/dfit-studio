@@ -4,7 +4,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "dev:api": "pnpm --filter @dfit/api dev",
+    "dev:web": "pnpm --filter @dfit/web dev"
   },
   "engines": {
     "node": ">=22"
