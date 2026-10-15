@@ -121,7 +121,7 @@ export function Select({ label, value, options, onChange, className }: Props) {
             id={listId}
             role="listbox"
             aria-labelledby={labelId}
-            className="absolute left-0 right-0 z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-line bg-surface p-1 shadow-lg shadow-black/60"
+            className="absolute left-0 right-0 z-20 mt-1 max-h-60 slim-scroll overflow-auto rounded-xl border border-line bg-surface p-1 shadow-lg shadow-black/60"
           >
             {options.map((o, i) => {
               const isSelected = i === selectedIndex;
