@@ -4,6 +4,7 @@ import { Alert } from "../components/Alert";
 import logo from "../assets/logo.png";
 import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, mondayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
+import { notifyError, notifySuccess } from "../lib/notify";
 import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
 
 export default function HomePage() {
@@ -14,7 +15,6 @@ export default function HomePage() {
   const [sessions, setSessions] = useState<ClassSession[] | null>(null);
   const [usage, setUsage] = useState<WeeklyUsage | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [actionError, setActionError] = useState("");
   const [booking, setBooking] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [swapFrom, setSwapFrom] = useState<ClassSession | null>(null);
@@ -45,16 +45,15 @@ export default function HomePage() {
     const next = addDays(weekStart, delta * 7);
     setWeekStart(next);
     setSelected(next === mondayOf(today) ? today : next);
-    setActionError("");
   }
 
   async function book(session: ClassSession) {
     setBooking(session.id);
-    setActionError("");
     try {
       await bookClass(session.id);
+      notifySuccess("Reserva confirmada.");
     } catch (err) {
-      setActionError(errorMessage(err));
+      notifyError(errorMessage(err));
     }
     // Always reload: after a failure (for example a full class) the list shows the real situation.
     await load();
@@ -63,12 +62,12 @@ export default function HomePage() {
 
   async function swap(target: ClassSession) {
     setBooking(target.id);
-    setActionError("");
     try {
       await swapBooking(swapFrom!.myBookingId!, target.id);
       setSwapFrom(null);
+      notifySuccess("Aula trocada.");
     } catch (err) {
-      setActionError(errorMessage(err));
+      notifyError(errorMessage(err));
     }
     await load();
     setBooking(null);
@@ -76,11 +75,11 @@ export default function HomePage() {
 
   async function cancel(session: ClassSession) {
     setBooking(session.id);
-    setActionError("");
     try {
       await cancelBooking(session.myBookingId!);
+      notifySuccess("Reserva cancelada.");
     } catch (err) {
-      setActionError(errorMessage(err));
+      notifyError(errorMessage(err));
     }
     setConfirming(null);
     await load();
@@ -158,7 +157,6 @@ export default function HomePage() {
             </button>
           </div>
         )}
-        {actionError && <Alert>{actionError}</Alert>}
         {loadError && <Alert>{loadError}</Alert>}
         {!loadError && sessions === null && <p className="text-muted">Carregando aulas…</p>}
         {sessions && daySessions.length === 0 && <p className="text-muted">Nenhuma aula neste dia.</p>}
@@ -218,7 +216,7 @@ export default function HomePage() {
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-medium text-brand-light">{swapFrom?.id === s.id ? "Aula atual" : "✓ Você está nesta aula"}</p>
                           {!swapFrom && (
-                            <button type="button" onClick={() => { setSwapFrom(s); setConfirming(null); setActionError(""); }} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
+                            <button type="button" onClick={() => { setSwapFrom(s); setConfirming(null); }} className="rounded-lg px-3 py-2 text-sm text-muted underline hover:text-white">
                               Trocar
                             </button>
                           )}

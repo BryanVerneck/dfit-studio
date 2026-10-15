@@ -221,6 +221,7 @@ describe("week view", () => {
     await screen.findByText("18:00");
     await user.click(screen.getByRole("button", { name: "Reservar" }));
     expect(await screen.findByText("✓ Você está nesta aula")).toBeInTheDocument();
+    expect(await screen.findByText("Reserva confirmada.")).toBeInTheDocument();
     const call = calls.find((c) => c.path === "/bookings");
     expect(call?.body).toMatchObject({ sessionId: "b" });
     expect(call?.body.idempotencyKey).toBeTruthy();
@@ -235,7 +236,7 @@ describe("week view", () => {
     const user = userEvent.setup({ advanceTimers: () => {} });
     await screen.findByText("18:00");
     await user.click(screen.getByRole("button", { name: "Reservar" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Esta aula já está lotada.");
+    expect(await screen.findByText("Esta aula já está lotada.", { exact: false })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Sem vagas" })).toHaveLength(2));
   });
 
@@ -254,6 +255,7 @@ describe("week view", () => {
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
     expect(await screen.findByRole("button", { name: "Reservar" })).toBeInTheDocument();
+    expect(await screen.findByText("Reserva cancelada.")).toBeInTheDocument();
     expect(screen.queryByText("✓ Você está nesta aula")).not.toBeInTheDocument();
   });
 
@@ -264,7 +266,7 @@ describe("week view", () => {
     const user = userEvent.setup({ advanceTimers: () => {} });
     await user.click(await screen.findByRole("button", { name: "Cancelar" }));
     await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Já passou do prazo para cancelar");
+    expect(await screen.findByText("Já passou do prazo para cancelar", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
   });
 
@@ -284,6 +286,7 @@ describe("week view", () => {
     expect(await screen.findByText("✓ Você está nesta aula")).toBeInTheDocument();
     expect(calls.find((c) => c.path === "/bookings/bk1/swap")?.body).toMatchObject({ toSessionId: "e" });
     expect(screen.queryByText(/Trocando a aula/)).not.toBeInTheDocument();
+    expect(await screen.findByText("Aula trocada.")).toBeInTheDocument();
   });
 
   it("keeps the original class when the swap fails", async () => {
@@ -294,7 +297,7 @@ describe("week view", () => {
     const user = userEvent.setup({ advanceTimers: () => {} });
     await user.click(await screen.findByRole("button", { name: "Trocar" }));
     await user.click(screen.getByRole("button", { name: "Trocar para esta" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Você já usou todas as aulas desta semana.");
+    expect(await screen.findByText("Você já usou todas as aulas desta semana.", { exact: false })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Desistir da troca" }));
     expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
   });
