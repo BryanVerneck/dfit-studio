@@ -31,6 +31,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Portuguese only needs the Latin part of Montserrat; keep it available offline.
+        globPatterns: ["**/*.{js,css,html}", "assets/montserrat-latin-wght-normal-*.woff2"],
         // API calls are never served from the cache, so spots left and bookings are always current.
         navigateFallbackDenylist: apiPaths.map((p) => new RegExp(`^${p}`)),
       },

@@ -76,17 +76,3 @@ export function PasswordField({ label, error, hint, ...rest }: Props) {
     </div>
   );
 }
-
-export function SelectField({ label, children, ...rest }: Omit<InputHTMLAttributes<HTMLSelectElement>, "id"> & { label: string; children: React.ReactNode }) {
-  const id = useId();
-  return (
-    <div className="mb-4">
-      <label htmlFor={id} className="mb-1 block text-sm text-muted">
-        {label}
-      </label>
-      <select id={id} className={`${inputClass} border-line`} {...(rest as object)}>
-        {children}
-      </select>
-    </div>
-  );
-}

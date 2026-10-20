@@ -31,3 +31,18 @@ export const cancelBooking = (bookingId: string) => authedRequest<{ booking: { i
 
 export const swapBooking = (bookingId: string, toSessionId: string) =>
   authedRequest<{ booking: { id: string } }>(`/bookings/${bookingId}/swap`, "POST", { toSessionId, idempotencyKey: crypto.randomUUID() });
+
+export interface MyBooking {
+  id: string;
+  sessionId: string;
+  source: "standing" | "one_off";
+  status: "booked" | "attended" | "no_show" | "cancelled";
+  cancelReason: string | null;
+  cancelNote: string | null;
+  name: string;
+  startsAt: string;
+  durationMin: number;
+}
+
+// Defaults to the next four weeks.
+export const fetchMyBookings = () => authedRequest<MyBooking[]>("/me/bookings");

@@ -1,0 +1,23 @@
+# One service serves the API and the web app together, plus a Postgres database.
+# Render: New > Blueprint, pick this repository, then fill in the owner email and password when asked.
+services:
+  - type: web
+    name: dfit-studio
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dfit-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_OWNER_EMAIL
+        sync: false
+      - key: SEED_OWNER_PASSWORD
+        sync: false
+
+databases:
+  - name: dfit-db
+    plan: free

@@ -1,13 +1,23 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate, requireRole } from "../auth/guard.js";
+import { isUniqueViolation } from "../auth/errors.js";
 import { generateTemporaryPassword, hashPassword } from "../auth/password.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
-import { memberships, refreshTokens, students, users } from "../db/schema.js";
+import { localDate } from "../booking/time.js";
+import { loadStudio } from "../booking/service.js";
+import { agreements, memberships, refreshTokens, students, users } from "../db/schema.js";
 
 const params = z.object({ userId: z.string().uuid() });
+const newStudentBody = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().toLowerCase().email().max(254),
+  phone: z.string().trim().max(40).optional(),
+  gender: z.string().trim().max(40).optional(),
+  weeklyLimit: z.number().int().min(0).max(14),
+});
 
 export function staffRoutes(config: Config, db: Db) {
   return async (app: FastifyInstance) => {
@@ -28,6 +38,59 @@ export function staffRoutes(config: Config, db: Db) {
         .innerJoin(users, eq(users.id, memberships.userId))
         .where(and(eq(memberships.studioId, studioId), eq(memberships.status, "pending"), eq(memberships.role, "student")))
         .orderBy(memberships.createdAt);
+    });
+
+    // Active students with the weekly limit that applies today (null when no agreement covers today).
+    app.get("/staff/students", async (request) => {
+      const { studioId } = request.auth!;
+      const studio = await loadStudio(db, studioId);
+      const today = localDate(new Date(), studio.timezone);
+      const rows = await db
+        .select({ studentId: students.id, userId: users.id, name: users.name, email: users.email, phone: users.phone })
+        .from(students)
+        .innerJoin(users, eq(users.id, students.userId))
+        .where(and(eq(students.studioId, studioId), eq(students.status, "active")))
+        .orderBy(users.name);
+      const current = rows.length
+        ? await db
+            .select({ studentId: agreements.studentId, weeklyLimit: agreements.weeklyLimit })
+            .from(agreements)
+            .where(
+              and(
+                inArray(agreements.studentId, rows.map((r) => r.studentId)),
+                sql`${agreements.validFrom} <= ${today}`,
+                sql`(${agreements.validTo} is null or ${agreements.validTo} >= ${today})`,
+              ),
+            )
+        : [];
+      const limits = new Map(current.map((a) => [a.studentId, a.weeklyLimit]));
+      return rows.map((r) => ({ ...r, weeklyLimit: limits.get(r.studentId) ?? null }));
+    });
+
+    // Creates an active student directly (no signup or approval). The temporary password is shown once
+    // and must be replaced at the first login.
+    app.post("/staff/students", async (request, reply) => {
+      const { studioId } = request.auth!;
+      const body = newStudentBody.parse(request.body);
+      const studio = await loadStudio(db, studioId);
+      const temporaryPassword = generateTemporaryPassword();
+      const passwordHash = await hashPassword(temporaryPassword);
+      try {
+        const created = await db.transaction(async (tx) => {
+          const [user] = await tx
+            .insert(users)
+            .values({ email: body.email, name: body.name, phone: body.phone, gender: body.gender, passwordHash, mustChangePassword: true })
+            .returning({ id: users.id });
+          await tx.insert(memberships).values({ studioId, userId: user.id, role: "student", status: "active" });
+          const [student] = await tx.insert(students).values({ studioId, userId: user.id }).returning({ id: students.id });
+          await tx.insert(agreements).values({ studioId, studentId: student.id, weeklyLimit: body.weeklyLimit, validFrom: localDate(new Date(), studio.timezone) });
+          return { userId: user.id, studentId: student.id };
+        });
+        return reply.code(201).send({ ...created, temporaryPassword });
+      } catch (err) {
+        if (isUniqueViolation(err)) return reply.code(409).send({ error: "email_taken" });
+        throw err;
+      }
     });
 
     app.post("/staff/students/:userId/approve", async (request, reply) => {

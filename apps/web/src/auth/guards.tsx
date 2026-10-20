@@ -19,3 +19,10 @@ export function PublicOnly() {
   if (state.status === "authenticated") return <Navigate to={state.user.mustChangePassword ? "/trocar-senha" : "/"} replace />;
   return <Outlet />;
 }
+
+// Pages for the studio team. Students who open one are sent back to the class list.
+export function RequireStaff() {
+  const { state } = useAuth();
+  if (state.status !== "authenticated") return null;
+  return state.user.role === "student" ? <Navigate to="/" replace /> : <Outlet />;
+}
