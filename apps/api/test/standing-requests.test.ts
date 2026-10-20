@@ -179,7 +179,10 @@ describe.skipIf(!process.env.DATABASE_URL)("fixed class requests", () => {
     expect(await myFixed(ana.token)).toHaveLength(1);
 
     const again = await call("POST", "/me/standing-requests", ana.token, { fromEnrollmentId: current.id });
+    // Asking again replaces the refusal: it is gone from the student's list even after the new request is cancelled.
+    expect(((await call("GET", "/me/standing-requests", ana.token)).json() as { status: string }[]).map((r) => r.status)).toEqual(["pending"]);
     expect((await call("POST", `/me/standing-requests/${again.json().request.id}/cancel`, ana.token)).statusCode).toBe(200);
+    expect(await call("GET", "/me/standing-requests", ana.token).then((r) => r.json())).toEqual([]);
     expect((await call("POST", `/me/standing-requests/${again.json().request.id}/cancel`, ana.token)).json().error).toBe("request_not_pending");
 
     const last = await call("POST", "/me/standing-requests", ana.token, { fromEnrollmentId: current.id });

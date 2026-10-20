@@ -4,7 +4,6 @@ import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
 import {
   askForChange,
-  describeRequest,
   fetchMyFixed,
   fetchMyRequests,
   fetchSlots,
@@ -18,13 +17,17 @@ import {
 import { Alert } from "./Alert";
 import { Select } from "./Select";
 
-type Form = { kind: "new" } | { kind: "move"; from: FixedClass } | { kind: "leave"; from: FixedClass };
+type Form = { kind: "new" } | { kind: "retry"; requestId: string } | { kind: "move"; from: FixedClass } | { kind: "leave"; from: FixedClass };
 
 const secondary = "flex-1 rounded-lg border border-line px-4 py-2.5 font-semibold hover:border-brand-light disabled:opacity-50";
 const primary = "flex-1 rounded-lg bg-linear-to-r from-brand to-violet px-4 py-2.5 font-semibold text-white disabled:opacity-50";
 
-const statusText = { approved: "Aprovado", rejected: "Recusado", pending: "Aguardando o estúdio", cancelled: "Cancelado" } as const;
-const statusColor = { approved: "text-success", rejected: "text-danger", pending: "text-muted", cancelled: "text-muted" } as const;
+const statusText = { approved: "Aprovado", rejected: "Recusado", pending: "Pendente", cancelled: "Cancelado" } as const;
+const statusColor = { approved: "text-success", rejected: "text-danger", pending: "text-yellow-400", cancelled: "text-muted" } as const;
+
+const Status = ({ request }: { request: StandingRequest }) => <span className={statusColor[request.status]}>{statusText[request.status]}</span>;
+
+const card = "rounded-xl border border-line/60 bg-surface p-4";
 
 // The student's fixed classes, and the requests to change them. Staff decide; nothing changes until they approve.
 export function FixedSchedule() {
@@ -53,10 +56,14 @@ export function FixedSchedule() {
     void load();
   }, [load]);
 
-  const pending = requests.filter((r) => r.status === "pending");
-  const decided = requests.filter((r) => r.status !== "pending").slice(0, 3);
-  // A class already asked to leave or move cannot be asked about again until the answer comes.
-  const asked = new Set(pending.map((r) => r.from?.enrollmentId).filter(Boolean));
+  // Requests arrive newest first. Each shows inside the fixed class it is about: the class the student asked to leave or
+  // move from, or, once approved, the class they moved to. A request to join a new class has no class yet, so it gets
+  // a card of its own, the same as a fixed class: every pending one, or else the latest refused one.
+  const requestFor = (f: FixedClass) =>
+    requests.find((r) => r.from?.enrollmentId === f.id || (r.status === "approved" && r.to?.slotId === f.slotId));
+  const joining = requests.filter((r) => !r.from && r.to && r.status === "pending");
+  const refusedJoin = requests.find((r) => !r.from && r.to && r.status === "rejected");
+  const standalone = refusedJoin && joining.length === 0 ? [refusedJoin] : joining;
   const current = (fixed ?? []).filter((f) => f.validTo === null);
   const options = slotOptions(slots, current.map((f) => f.slotId));
 
@@ -64,24 +71,6 @@ export function FixedSchedule() {
     setForm(next);
     setNote("");
     setSlotId(options[0]?.value ?? "");
-  }
-
-  async function send() {
-    if (!form) return;
-    setBusy(true);
-    try {
-      await askForChange({
-        fromEnrollmentId: form.kind === "new" ? undefined : form.from.id,
-        toSlotId: form.kind === "leave" ? undefined : slotId,
-        note: note.trim() || undefined,
-      });
-      notifySuccess("Pedido enviado. O estúdio vai responder em breve.");
-      setForm(null);
-      await load();
-    } catch (err) {
-      notifyError(errorMessage(err));
-    }
-    setBusy(false);
   }
 
   async function withdraw(id: string) {
@@ -96,25 +85,51 @@ export function FixedSchedule() {
     setBusy(false);
   }
 
-  return (
+  async function send() {
+    if (!form) return;
+    setBusy(true);
+    try {
+      await askForChange({
+        fromEnrollmentId: form.kind === "move" || form.kind === "leave" ? form.from.id : undefined,
+        toSlotId: form.kind === "leave" ? undefined : slotId,
+        note: note.trim() || undefined,
+      });
+      notifySuccess("Pedido enviado. O estúdio vai responder em breve.");
+      setForm(null);
+      await load();
+    } catch (err) {
+      notifyError(errorMessage(err));
+    }
+    setBusy(false);
+  }
+
+    return (
     <section className="mt-6" aria-labelledby="fixed-title">
       <h2 id="fixed-title" className="text-lg font-semibold">
-        Meu horário fixo
+        Aulas fixas
       </h2>
       {loadError && <Alert>{loadError}</Alert>}
       {!loadError && fixed === null && <p className="mt-2 text-muted">Carregando…</p>}
-      {fixed && fixed.length === 0 && <p className="mt-1 text-muted">Você ainda não tem horário fixo. Peça um e o estúdio responde.</p>}
+      {fixed && fixed.length === 0 && standalone.length === 0 && <p className="mt-1 text-muted">Você ainda não tem horário fixo. Peça um e o estúdio responde.</p>}
 
       <ul className="mt-2 space-y-3">
         {fixed?.map((f) => (
-          <li key={f.id} className="rounded-xl border border-line/60 bg-surface p-4">
-            <p className="text-lg font-semibold">{slotLabel(f)}</p>
+          <li key={f.id} className={card}>
+            <p className="text-lg font-semibold">
+              {slotLabel(f)}
+              {requestFor(f) && (
+                <>
+                  {" "}
+                  · <Status request={requestFor(f)!} />
+                </>
+              )}
+            </p>
             <p className="text-muted">
               {f.name} · {f.durationMin} min
             </p>
             {f.validTo ? (
               <p className="mt-2 text-sm text-muted">Última aula neste horário: {dayAndMonth(f.validTo)}.</p>
-            ) : form && form.kind !== "new" && form.from.id === f.id ? (
+            ) : form && (form.kind === "move" || form.kind === "leave") && form.from.id === f.id ? (
               <div className="mt-3" role="group" aria-label={form.kind === "move" ? "Pedir troca de horário" : "Pedir para sair do horário"}>
                 {form.kind === "move" && <Select label="Novo horário" value={slotId} onChange={setSlotId} options={options} />}
                 <NoteField value={note} onChange={setNote} />
@@ -127,16 +142,67 @@ export function FixedSchedule() {
                   </button>
                 </div>
               </div>
-            ) : asked.has(f.id) ? (
-              <p className="mt-2 text-sm text-muted">Pedido em análise.</p>
+            ) : (
+              <>
+                {requestFor(f)?.status === "rejected" && requestFor(f)!.decisionNote && (
+                  <p className="mt-2 text-sm text-muted">{requestFor(f)!.decisionNote}</p>
+                )}
+                {/* While a request waits the student can only take it back; after a refusal they can only ask to move. */}
+                {requestFor(f)?.status === "pending" ? (
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" disabled={busy} onClick={() => void withdraw(requestFor(f)!.id)} className={secondary}>
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={() => open({ kind: "move", from: f })} className={secondary}>
+                      Trocar horário
+                    </button>
+                    {requestFor(f)?.status !== "rejected" && (
+                      <button type="button" onClick={() => open({ kind: "leave", from: f })} className={secondary}>
+                        Sair
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+        {standalone.map((r) => (
+          <li key={r.id} className={card}>
+            <p className="text-lg font-semibold">
+              {slotLabel(r.to!)} · <Status request={r} />
+            </p>
+            <p className="text-muted">
+              {r.to!.name} · {r.to!.durationMin} min
+            </p>
+            {r.status === "rejected" && r.decisionNote && <p className="mt-2 text-sm text-muted">{r.decisionNote}</p>}
+            {form?.kind === "retry" && form.requestId === r.id ? (
+              <div className="mt-3" role="group" aria-label="Pedir troca de horário">
+                <Select label="Novo horário" value={slotId} onChange={setSlotId} options={options} />
+                <NoteField value={note} onChange={setNote} />
+                <div className="flex gap-2">
+                  <button type="button" disabled={busy || !slotId} onClick={() => void send()} className={primary}>
+                    {busy ? "Enviando…" : "Enviar pedido"}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => setForm(null)} className={secondary}>
+                    Voltar
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => open({ kind: "move", from: f })} className={secondary}>
-                  Trocar horário
-                </button>
-                <button type="button" onClick={() => open({ kind: "leave", from: f })} className={secondary}>
-                  Sair
-                </button>
+                {r.status === "pending" ? (
+                  <button type="button" disabled={busy} onClick={() => void withdraw(r.id)} className={secondary}>
+                    Cancelar
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => open({ kind: "retry", requestId: r.id })} className={secondary}>
+                    Trocar horário
+                  </button>
+                )}
               </div>
             )}
           </li>
@@ -164,25 +230,6 @@ export function FixedSchedule() {
         )
       )}
 
-      {(pending.length > 0 || decided.length > 0) && (
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold text-muted">Pedidos</h3>
-          <ul className="mt-2 space-y-2">
-            {[...pending, ...decided].map((r) => (
-              <li key={r.id} className="rounded-xl border border-line/60 bg-surface p-3">
-                <p className="font-medium">{describeRequest(r)}</p>
-                <p className={`text-sm font-medium ${statusColor[r.status]}`}>{statusText[r.status]}</p>
-                {r.decisionNote && <p className="text-sm text-muted">{r.decisionNote}</p>}
-                {r.status === "pending" && (
-                  <button type="button" disabled={busy} onClick={() => void withdraw(r.id)} className="mt-1 text-sm text-danger underline disabled:opacity-50">
-                    Cancelar pedido
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </section>
   );
 }

@@ -262,6 +262,18 @@ export async function createRequest(
         note: input.note || null,
       })
       .returning();
+    // A new request answers the refusal: the refused ones for the same class are dropped from the student's view for
+    // good, so cancelling the new request later does not bring the refusal back.
+    await tx
+      .update(standingRequests)
+      .set({ status: "cancelled", decidedAt: new Date() })
+      .where(
+        and(
+          eq(standingRequests.studentId, input.studentId),
+          eq(standingRequests.status, "rejected"),
+          sql`${standingRequests.fromEnrollmentId} is not distinct from ${input.fromEnrollmentId ?? null}::uuid`,
+        ),
+      );
     return row;
   });
   return (await describe(db, [created]))[0];

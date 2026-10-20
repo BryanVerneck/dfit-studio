@@ -46,9 +46,10 @@ export default function MyBookingsPage() {
   if (state.status !== "authenticated") return null;
   if (state.user.role !== "student") return <Navigate to="/" replace />;
 
-  // Only classes that have not finished yet; a class the studio called off stays listed so the student knows why it vanished.
+  // One-off classes only (the fixed ones are shown above, as the fixed schedule), and only those that have not finished yet.
+  // A class the studio called off stays listed so the student knows why it vanished.
   const now = Date.now();
-  const upcoming = (bookings ?? []).filter((b) => new Date(b.startsAt).getTime() + b.durationMin * 60_000 > now);
+  const upcoming = (bookings ?? []).filter((b) => b.source === "one_off" && new Date(b.startsAt).getTime() + b.durationMin * 60_000 > now);
   const days = [...new Set(upcoming.map((b) => dayKey(b.startsAt)))];
 
   return (
@@ -64,13 +65,16 @@ export default function MyBookingsPage() {
 
       <FixedSchedule />
 
-      <h1 className="mt-8 text-2xl font-semibold">Minhas aulas</h1>
-      <p className="mt-1 text-muted">Suas próximas reservas.</p>
+      <section className="mt-8" aria-labelledby="one-off-title">
+      <h2 id="one-off-title" className="text-lg font-semibold">
+        Aulas avulsas
+      </h2>
+      <p className="mt-1 text-muted">Aulas que você reservou fora do horário fixo.</p>
 
       <div className="mt-4" aria-live="polite">
         {loadError && <Alert>{loadError}</Alert>}
         {!loadError && bookings === null && <p className="text-muted">Carregando…</p>}
-        {bookings && upcoming.length === 0 && <p className="text-muted">Você não tem aulas reservadas.</p>}
+        {bookings && upcoming.length === 0 && <p className="text-muted">Você não tem aulas avulsas reservadas.</p>}
         {days.map((day) => (
           <section key={day} className="mt-4">
             <h2 className="text-lg font-semibold">
@@ -118,8 +122,7 @@ export default function MyBookingsPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-3 flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-brand-light">{b.source === "standing" ? "Horário fixo" : "Avulsa"}</p>
+                        <div className="mt-3 flex items-center justify-end gap-3">
                           <button type="button" onClick={() => setConfirming(b.id)} className="rounded-lg px-3 py-2 text-sm text-danger underline hover:brightness-125">
                             Cancelar
                           </button>
@@ -132,6 +135,7 @@ export default function MyBookingsPage() {
           </section>
         ))}
       </div>
+      </section>
     </main>
   );
 }
