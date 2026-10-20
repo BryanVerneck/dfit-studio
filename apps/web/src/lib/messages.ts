@@ -21,7 +21,7 @@ export function errorMessage(err: unknown): string {
     case "invalid_request":
       return "Confira os dados e tente de novo.";
     case "too_late_to_cancel":
-      return "Já passou do prazo para cancelar esta aula. Fale com o estúdio.";
+      return "Esta aula já começou, então não dá mais para cancelar. Fale com o estúdio.";
     case "booking_not_active":
       return "Esta reserva já foi cancelada.";
     case "same_session":

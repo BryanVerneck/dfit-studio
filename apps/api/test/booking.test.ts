@@ -98,10 +98,10 @@ describe.skipIf(!process.env.DATABASE_URL)("booking", () => {
     const date = weekA(1).toISODate()!;
     const list = async () => (await call("GET", `/sessions?from=${date}&to=${date}`, s.token)).json();
 
-    expect(await list()).toMatchObject([{ id: session.id, capacity: 4, spotsLeft: 4, myBookingId: null }]);
+    expect(await list()).toMatchObject([{ id: session.id, capacity: 4, spotsLeft: 4, myBookingId: null, myBookingSource: null }]);
     const booked = await call("POST", "/bookings", s.token, { sessionId: session.id });
     expect(booked.statusCode).toBe(201);
-    expect(await list()).toMatchObject([{ spotsLeft: 3, myBookingId: booked.json().booking.id }]);
+    expect(await list()).toMatchObject([{ spotsLeft: 3, myBookingId: booked.json().booking.id, myBookingSource: "one_off" }]);
     expect((await call("GET", "/sessions?from=2026-13-40", s.token)).statusCode).toBe(400);
   });
 
@@ -191,8 +191,8 @@ describe.skipIf(!process.env.DATABASE_URL)("booking", () => {
     expect(counts.reduce((sum, x) => sum + x.bookedCount, 0)).toBe(1);
   });
 
-  it("applies the cancellation cutoff to students but not staff, and refuses started classes", async () => {
-    const t = await newStudio("cutoff");
+  it("lets students cancel right up to the start, but not after, and refuses started classes", async () => {
+    const t = await newStudio("cancel");
     const s = await t.student("Cut");
     const other = await t.student("Other");
     const owner = await t.member("Owner", "owner");
@@ -203,15 +203,19 @@ describe.skipIf(!process.env.DATABASE_URL)("booking", () => {
     const id = booked.json().booking.id;
 
     expect((await call("DELETE", `/bookings/${id}`, other.token)).statusCode).toBe(404);
-    const late = await call("DELETE", `/bookings/${id}`, s.token);
-    expect(late.statusCode).toBe(409);
-    expect(late.json().error).toBe("too_late_to_cancel");
-    expect((await t.reload(soon.id)).bookedCount).toBe(1);
-    expect((await call("DELETE", `/bookings/${id}`, owner.token)).statusCode).toBe(200);
+    // Half an hour before the class: no cutoff, so the student can still cancel.
+    expect((await call("DELETE", `/bookings/${id}`, s.token)).statusCode).toBe(200);
     expect((await t.reload(soon.id)).bookedCount).toBe(0);
     expect((await call("DELETE", `/bookings/${id}`, owner.token)).json().error).toBe("booking_not_active");
 
+    // Once the class has started a student cannot undo it; staff still can.
     const started = await t.session(DateTime.now().minus({ minutes: 5 }));
+    const [past] = await db.insert(bookings).values({ studioId: t.studio.id, sessionId: started.id, studentId: s.studentId, source: "one_off" }).returning();
+    await db.update(classSessions).set({ bookedCount: 1 }).where(eq(classSessions.id, started.id));
+    const late = await call("DELETE", `/bookings/${past.id}`, s.token);
+    expect([late.statusCode, late.json().error]).toEqual([409, "too_late_to_cancel"]);
+    expect((await t.reload(started.id)).bookedCount).toBe(1);
+    expect((await call("DELETE", `/bookings/${past.id}`, owner.token)).statusCode).toBe(200);
     expect((await call("POST", "/bookings", s.token, { sessionId: started.id })).json().error).toBe("class_started");
     const far = await t.session(DateTime.now().plus({ days: 60 }));
     expect((await call("POST", "/bookings", s.token, { sessionId: far.id })).json().error).toBe("outside_booking_window");

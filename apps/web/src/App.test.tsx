@@ -247,6 +247,17 @@ describe("week view", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Sem vagas" })).toHaveLength(2));
   });
 
+  it("marks a one-off class in yellow and leaves fixed ones unmarked", async () => {
+    list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1", myBookingSource: "one_off" } : s.id === "c" ? { ...s, myBookingId: "bk2", myBookingSource: "standing" } : s));
+    renderAt("/");
+    const label = await screen.findByText(/Troca de Horário/);
+    expect(label).toHaveClass("text-yellow-400");
+    // The tag sits on the time line, after a dot.
+    expect(label.closest("p")).toHaveTextContent("18:00 · Troca de Horário");
+    expect(screen.getAllByText("✓ Você está nesta aula")).toHaveLength(2);
+    expect(screen.getAllByText(/Troca de Horário/)).toHaveLength(1);
+  });
+
   it("cancels a booking after confirmation", async () => {
     list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1", spotsLeft: 3 } : s));
     routes["DELETE /bookings/bk1"] = () => {
@@ -266,14 +277,14 @@ describe("week view", () => {
     expect(screen.queryByText("✓ Você está nesta aula")).not.toBeInTheDocument();
   });
 
-  it("explains when it is too late to cancel", async () => {
+  it("explains when the class already started and cannot be cancelled", async () => {
     list = list.map((s) => (s.id === "b" ? { ...s, myBookingId: "bk1" } : s));
     routes["DELETE /bookings/bk1"] = () => ({ status: 409, body: { error: "too_late_to_cancel" } });
     renderAt("/");
     const user = userEvent.setup({ advanceTimers: () => {} });
     await user.click(await screen.findByRole("button", { name: "Cancelar" }));
     await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
-    expect(await screen.findByText("Já passou do prazo para cancelar", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText("Esta aula já começou", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("✓ Você está nesta aula")).toBeInTheDocument();
   });
 
@@ -372,6 +383,16 @@ describe("staff approvals", () => {
     expect(screen.getByRole("heading", { name: "Horário fixo" })).toBeInTheDocument();
   });
 
+  it("has Aulas first, then Alunos, and a Sair button that logs out", async () => {
+    routes["POST /auth/logout"] = () => ({ body: {} });
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    const nav = (await screen.findByRole("link", { name: "Aulas" })).closest("nav")!;
+    expect(Array.from(nav.children).map((el) => el.textContent)).toEqual(["Aulas", "Alunos", "Sair"]);
+    await user.click(screen.getByRole("button", { name: "Sair" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/auth/logout")).toBe(true));
+  });
+
   it("keeps the old approvals and requests addresses working", async () => {
     renderAt("/equipe/aprovacoes");
     expect(await screen.findByRole("heading", { name: "Solicitações" })).toBeInTheDocument();
@@ -423,6 +444,17 @@ describe("staff students", () => {
     await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "bruno");
     expect(screen.queryByText("Ana Souza")).not.toBeInTheDocument();
     expect(screen.getByText("Bruno Dias")).toBeInTheDocument();
+  });
+
+  it("has Aulas first, then Solicitações, and a Sair button that logs out", async () => {
+    routes["POST /auth/logout"] = () => ({ body: {} });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Ana Souza");
+    const nav = screen.getByRole("link", { name: "Aulas" }).closest("nav")!;
+    expect(Array.from(nav.children).map((el) => el.textContent)).toEqual(["Aulas", "Solicitações", "Sair"]);
+    await user.click(screen.getByRole("button", { name: "Sair" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/auth/logout")).toBe(true));
   });
 
   it("changes a weekly limit", async () => {
@@ -664,7 +696,7 @@ describe("my bookings", () => {
 
   it("lists only the one-off classes, by day, and leaves out fixed ones and ones that already ended", async () => {
     renderAt("/minhas-aulas");
-    expect(await screen.findByRole("heading", { name: "Aulas avulsas" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Trocas de horário" })).toBeInTheDocument();
     expect(await screen.findByText("Quinta-feira, 15 de outubro")).toBeInTheDocument();
     expect(screen.getByText("Sexta-feira, 16 de outubro")).toBeInTheDocument();
     expect(screen.queryByText("Quarta-feira, 14 de outubro")).not.toBeInTheDocument();
@@ -691,6 +723,13 @@ describe("my bookings", () => {
     await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
     await waitFor(() => expect(calls.some((c) => c.path === "/bookings/b")).toBe(true));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument());
+  });
+
+  it("takes the student to the home page when the logo is clicked", async () => {
+    renderAt("/minhas-aulas");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("link", { name: "Dfit Studio" }));
+    expect(await screen.findByRole("heading", { name: /Olá/ })).toBeInTheDocument();
   });
 
   it("shows an empty message and a tab to move between screens", async () => {
@@ -968,6 +1007,19 @@ describe("fixed classes", () => {
         { slotId: "sl2", allowOverCapacity: false },
         { slotId: "sl2", allowOverCapacity: true },
       ]);
+    });
+
+    it("warns before a lower limit removes the fixed classes, and says how many went", async () => {
+      routes["GET /staff/standing-enrollments"] = () => ({ body: [mine, { ...tuesday, id: "en2", studentId: "s1", slotId: "sl2", validFrom: "2026-10-01", validTo: null }] });
+      routes["POST /staff/students/s1/agreement"] = () => ({ body: { agreement: {}, removedFixedClasses: 2 } });
+      renderAt("/equipe/alunos");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Alterar limite" }));
+      await user.click(screen.getByLabelText("Aulas por semana"));
+      await user.click(screen.getByRole("option", { name: "1" }));
+      expect(await screen.findByText(/tem 2 horários fixos, mais do que 1 aula por semana/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      expect((await screen.findAllByText(/Os 2 horários fixos foram removidos/))[0]).toBeInTheDocument();
     });
 
     it("blocks adding fixed classes beyond the weekly limit", async () => {

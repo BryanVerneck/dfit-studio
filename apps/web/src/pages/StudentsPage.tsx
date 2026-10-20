@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import logo from "../assets/logo.png";
+import { useAuth } from "../auth/AuthContext";
+import { HeaderLogo } from "../components/HeaderLogo";
 import { Alert } from "../components/Alert";
 import { FixedPanel } from "../components/FixedPanel";
 import { RequestsLink } from "../components/RequestsLink";
@@ -19,6 +20,7 @@ const limitText = (limit: number | null) =>
   limit === null ? "Sem plano definido" : `${limit} ${limit === 1 ? "aula" : "aulas"} por semana`;
 
 export default function StudentsPage() {
+  const { logout } = useAuth();
   const [students, setStudents] = useState<StudentRow[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
@@ -52,8 +54,12 @@ export default function StudentsPage() {
   async function saveLimit(student: StudentRow) {
     setBusy(true);
     try {
-      await setWeeklyLimit(student.studentId, limit);
-      notifySuccess(`Limite de ${student.name} atualizado.`);
+      const { removedFixedClasses = 0 } = await setWeeklyLimit(student.studentId, limit);
+      notifySuccess(
+        removedFixedClasses > 0
+          ? `Limite de ${student.name} atualizado. ${removedFixedClasses === 1 ? "O horário fixo foi removido" : `Os ${removedFixedClasses} horários fixos foram removidos`}.`
+          : `Limite de ${student.name} atualizado.`,
+      );
       setPanel(null);
       await load();
     } catch (err) {
@@ -135,12 +141,15 @@ export default function StudentsPage() {
   return (
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
-        <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
+        <HeaderLogo />
         <nav className="flex items-center">
-          <RequestsLink />
           <Link to="/" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
             Aulas
           </Link>
+          <RequestsLink />
+          <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+            Sair
+          </button>
         </nav>
       </header>
 
@@ -186,6 +195,8 @@ export default function StudentsPage() {
                       onClick={() => {
                         setLimit(s.weeklyLimit ?? 3);
                         setPanel({ id: s.studentId, mode: "limit" });
+                        // Needed only for the warning below, so a failure here is not worth an error.
+                        void loadFixed().catch(() => {});
                       }}
                       className={secondary}
                     >
@@ -207,6 +218,14 @@ export default function StudentsPage() {
                 {open?.mode === "limit" && (
                   <div className="mt-3" role="group" aria-label={`Limite de ${s.name}`}>
                     <Select label="Aulas por semana" value={String(limit)} onChange={(v) => setLimit(Number(v))} options={LIMIT_OPTIONS} />
+                    {(() => {
+                      const held = fixed.filter((f) => f.studentId === s.studentId && f.validTo === null).length;
+                      return held > limit ? (
+                        <p className="mb-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
+                          {s.name} tem {held} horários fixos, mais do que {limit === 1 ? "1 aula" : `${limit} aulas`} por semana. Se salvar, todos os horários fixos serão removidos.
+                        </p>
+                      ) : null;
+                    })()}
                     <div className="flex gap-2">
                       <button type="button" disabled={busy} onClick={() => void saveLimit(s)} className={primary}>
                         {busy ? "Salvando…" : "Salvar"}

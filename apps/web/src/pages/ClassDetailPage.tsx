@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import logo from "../assets/logo.png";
+import { HeaderLogo } from "../components/HeaderLogo";
 import { Alert } from "../components/Alert";
 import { dayAndMonth, dayKey, formatTime, weekdayLong } from "../lib/dates";
 import { errorMessage, staffErrorMessage } from "../lib/messages";
@@ -107,7 +107,7 @@ export default function ClassDetailPage() {
   return (
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
-        <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
+        <HeaderLogo />
         <Link to="/" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
           Voltar às aulas
         </Link>

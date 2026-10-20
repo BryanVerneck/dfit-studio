@@ -11,6 +11,8 @@ export interface ClassSession {
   status: "scheduled" | "cancelled" | "completed";
   cancelNote: string | null;
   myBookingId: string | null;
+  // How the student holds this seat: "standing" is the fixed schedule, "one_off" an avulsa class.
+  myBookingSource?: "standing" | "one_off" | null;
 }
 
 export interface WeeklyUsage {

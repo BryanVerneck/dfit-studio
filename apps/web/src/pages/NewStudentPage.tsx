@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import logo from "../assets/logo.png";
+import { HeaderLogo } from "../components/HeaderLogo";
 import { Button } from "../components/Button";
 import { Select } from "../components/Select";
 import { TextField } from "../components/TextField";
@@ -58,7 +58,7 @@ export default function NewStudentPage() {
   return (
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
-        <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
+        <HeaderLogo />
         <nav className="flex items-center">
           <Link to="/equipe/alunos" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
             Alunos

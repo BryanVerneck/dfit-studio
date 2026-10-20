@@ -10,7 +10,6 @@ export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export interface StudioCtx {
   id: string;
   timezone: string;
-  cancellationCutoffMinutes: number;
   bookingWindowDays: number;
 }
 
@@ -23,7 +22,6 @@ export async function loadStudio(db: Db, studioId: string): Promise<StudioCtx> {
   return {
     id: studio.id,
     timezone: studio.timezone,
-    cancellationCutoffMinutes: studio.cancellationCutoffMinutes,
     bookingWindowDays: studio.bookingWindowDays,
   };
 }
@@ -220,10 +218,9 @@ export async function cancelBooking(
     const [session] = await tx.select().from(classSessions).where(eq(classSessions.id, found.booking.sessionId)).for("update");
     const [booking] = await tx.select().from(bookings).where(eq(bookings.id, found.booking.id)).for("update");
     if (booking.status !== "booked") throw new AppError(409, "booking_not_active");
-    if (input.actor.role === "student") {
-      const cutoff = session.startsAt.getTime() - studio.cancellationCutoffMinutes * 60_000;
-      if (Date.now() >= cutoff) throw new AppError(409, "too_late_to_cancel");
-    }
+    // Students can cancel any time until the class starts (there is no cutoff). Afterwards the booking is history:
+    // cancelling it would also hand back a weekly class the student already used.
+    if (input.actor.role === "student" && Date.now() >= session.startsAt.getTime()) throw new AppError(409, "too_late_to_cancel");
     const cancelReason = input.actor.role === "student" ? "student" : "staff";
     await tx
       .update(bookings)
@@ -268,8 +265,7 @@ export async function swapBooking(
     if (lockedFrom.status !== "booked") throw new AppError(409, "booking_not_active");
 
     const [oldSession] = await tx.select().from(classSessions).where(eq(classSessions.id, from.sessionId));
-    const cutoff = oldSession.startsAt.getTime() - studio.cancellationCutoffMinutes * 60_000;
-    if (Date.now() >= cutoff) throw new AppError(409, "too_late_to_cancel");
+    if (Date.now() >= oldSession.startsAt.getTime()) throw new AppError(409, "too_late_to_cancel");
 
     await tx
       .update(bookings)

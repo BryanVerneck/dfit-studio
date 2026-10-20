@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Alert } from "../components/Alert";
 import { RequestsLink } from "../components/RequestsLink";
 import { StudentTabs } from "../components/StudentTabs";
-import logo from "../assets/logo.png";
+import { HeaderLogo } from "../components/HeaderLogo";
 import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, sundayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
@@ -97,7 +97,7 @@ export default function HomePage() {
   return (
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
-        <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
+        <HeaderLogo />
         <div className="flex items-center">
           {!isStudent && (
             <>
@@ -193,7 +193,10 @@ export default function HomePage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xl font-semibold">{formatTime(s.startsAt)}</p>
+                    <p className="text-xl font-semibold">
+                      {formatTime(s.startsAt)}
+                      {mine && s.myBookingSource === "one_off" && <span className="text-sm font-medium text-yellow-400"> · Troca de Horário</span>}
+                    </p>
                     <p className="text-muted">
                       {s.name} · {s.durationMin} min
                     </p>

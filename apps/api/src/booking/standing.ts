@@ -111,6 +111,18 @@ export async function previewCapacity(db: Db, studio: StudioCtx, slotId: string,
   };
 }
 
+// A limit lowered below the number of fixed classes the student holds removes them from all of them, right away:
+// there is no fair way to choose which ones to keep. One-off bookings are left alone. Returns how many were removed.
+export async function removeFixedOverLimit(db: Db, studio: StudioCtx, studentId: string, limit: number, onDate: string) {
+  const open = await db
+    .select({ id: standingEnrollments.id })
+    .from(standingEnrollments)
+    .where(and(eq(standingEnrollments.studentId, studentId), openEnrollment(onDate)));
+  if (open.length <= limit) return 0;
+  for (const enrollment of open) await endEnrollment(db, studio, enrollment.id, onDate);
+  return open.length;
+}
+
 export async function addFixedClass(
   db: Db,
   studio: StudioCtx,

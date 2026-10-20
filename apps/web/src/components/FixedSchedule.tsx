@@ -25,7 +25,7 @@ const primary = "flex-1 rounded-lg bg-linear-to-r from-brand to-violet px-4 py-2
 const statusText = { approved: "Aprovado", rejected: "Recusado", pending: "Pendente", cancelled: "Cancelado" } as const;
 const statusColor = { approved: "text-success", rejected: "text-danger", pending: "text-yellow-400", cancelled: "text-muted" } as const;
 
-const Status = ({ request }: { request: StandingRequest }) => <span className={statusColor[request.status]}>{statusText[request.status]}</span>;
+const Status = ({ request }: { request: StandingRequest }) => <span className={`text-sm font-medium ${statusColor[request.status]}`}>{statusText[request.status]}</span>;
 
 const card = "rounded-xl border border-line/60 bg-surface p-4";
 

@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate, requireRole } from "../auth/guard.js";
 import { bookSeat, cancelDay, cancelSession, endEnrollment, generateSessions, loadStudio } from "../booking/service.js";
-import { addFixedClass } from "../booking/standing.js";
+import { addFixedClass, removeFixedOverLimit } from "../booking/standing.js";
 import { localDate } from "../booking/time.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
@@ -123,7 +123,7 @@ export function scheduleRoutes(config: Config, db: Db) {
       const studio = await loadStudio(db, auth.studioId);
       const validFrom = body.validFrom ?? localDate(new Date(), studio.timezone);
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const [student] = await tx
           .select({ id: students.id })
           .from(students)
@@ -156,6 +156,11 @@ export function scheduleRoutes(config: Config, db: Db) {
           .returning();
         return { agreement };
       });
+      // A lower limit that already applies and is smaller than the fixed classes the student holds removes them all.
+      // (A limit that starts in the future is not applied here.)
+      const today = localDate(new Date(), studio.timezone);
+      const removedFixedClasses = validFrom <= today ? await removeFixedOverLimit(db, studio, studentId, body.weeklyLimit, today) : 0;
+      return { ...result, removedFixedClasses };
     });
 
     // The fixed weekly schedule. Creating one also books the student into the coming sessions.

@@ -69,7 +69,7 @@ A swap cancels the original and books the new class in the same transaction, so 
 | --- | --- | --- |
 | `GET /sessions?from&to` | logged in | Classes with `spotsLeft`; students also get `myBookingId` |
 | `POST /bookings` | student | Book a class (`sessionId`) |
-| `DELETE /bookings/:id` | student (until the cutoff), staff (any time) | Cancel a booking |
+| `DELETE /bookings/:id` | student (until the class starts), staff (any time) | Cancel a booking |
 | `POST /bookings/:id/swap` | student | One-off swap to another class (`toSessionId`) |
 | `GET /me/bookings` | student | Upcoming bookings |
 | `GET /me/weekly-usage?date` | student | Classes used and remaining in that week |

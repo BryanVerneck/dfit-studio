@@ -66,6 +66,7 @@ export function bookingRoutes(config: Config, db: Db) {
           status: classSessions.status,
           cancelNote: classSessions.cancelNote,
           myBookingId: bookings.id,
+          myBookingSource: bookings.source,
         })
         .from(classSessions)
         .innerJoin(classSlots, eq(classSlots.id, classSessions.slotId))
@@ -104,7 +105,7 @@ export function bookingRoutes(config: Config, db: Db) {
       return reply.code(replayed ? 200 : 201).send({ booking: bookingView(booking) });
     });
 
-    // Students cancel their own booking (up to the cutoff); staff can cancel any booking.
+    // Students cancel their own booking (any time until the class starts); staff can cancel any booking.
     app.delete("/bookings/:id", async (request) => {
       const auth = request.auth!;
       const { id } = idParams.parse(request.params);

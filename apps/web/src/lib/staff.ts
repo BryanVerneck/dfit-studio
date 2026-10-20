@@ -38,8 +38,9 @@ export interface StudentRow {
 
 export const fetchStudents = () => authedRequest<StudentRow[]>("/staff/students");
 
+// removedFixedClasses: how many fixed classes were taken away because the new limit is lower than the number held.
 export const setWeeklyLimit = (studentId: string, weeklyLimit: number) =>
-  authedRequest(`/staff/students/${studentId}/agreement`, "POST", { weeklyLimit });
+  authedRequest<{ removedFixedClasses?: number }>(`/staff/students/${studentId}/agreement`, "POST", { weeklyLimit });
 
 // The server shows the password only in this response; it is never stored in readable form.
 export const createTemporaryPassword = (userId: string) =>

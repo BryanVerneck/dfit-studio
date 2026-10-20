@@ -164,6 +164,37 @@ describe.skipIf(!process.env.DATABASE_URL)("fixed class requests", () => {
     expect((await call("POST", "/me/standing-requests", noPlan.token, { toSlotId: t.monday.id })).json().error).toBe("no_agreement");
   });
 
+  it("removes every fixed class when the limit drops below how many the student holds", async () => {
+    const t = await newStudio("downgrade");
+    const ana = await t.student("Ana", 3);
+    const bia = await t.student("Bia", 3);
+    for (const s of [ana, bia]) {
+      for (const slot of [t.monday, t.tuesday]) {
+        expect((await call("POST", `/staff/students/${s.studentId}/standing-enrollments`, t.owner.token, { slotId: slot.id })).statusCode).toBe(201);
+      }
+    }
+    expect((await myBookings(ana.token)).length).toBeGreaterThanOrEqual(6);
+
+    // Two fixed classes still fit a limit of two: nothing is removed.
+    const same = await call("POST", `/staff/students/${ana.studentId}/agreement`, t.owner.token, { weeklyLimit: 2 });
+    expect(same.json().removedFixedClasses).toBe(0);
+    expect(await myFixed(ana.token)).toHaveLength(2);
+
+    // One does not: both go, with their coming bookings. Bia is untouched.
+    const down = await call("POST", `/staff/students/${ana.studentId}/agreement`, t.owner.token, { weeklyLimit: 1 });
+    expect(down.statusCode).toBe(200);
+    expect(down.json().removedFixedClasses).toBe(2);
+    expect(await myFixed(ana.token)).toHaveLength(0);
+    expect((await myBookings(ana.token)).length).toBeLessThanOrEqual(2); // at most classes already started today
+    expect(await myFixed(bia.token)).toHaveLength(2);
+    expect((await myBookings(bia.token)).length).toBeGreaterThanOrEqual(6);
+
+    // A limit that starts in the future does not remove anything yet.
+    const later = await call("POST", `/staff/students/${bia.studentId}/agreement`, t.owner.token, { weeklyLimit: 1, validFrom: "2999-01-01" });
+    expect(later.json().removedFixedClasses).toBe(0);
+    expect(await myFixed(bia.token)).toHaveLength(2);
+  });
+
   it("ends a fixed class on request, and lets staff reject or the student withdraw", async () => {
     const t = await newStudio("end");
     const ana = await t.student("Ana");
