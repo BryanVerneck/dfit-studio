@@ -67,7 +67,7 @@ export const refreshTokens = pgTable(
     id: id(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
     studioId: studioId(),
     tokenHash: text("token_hash").notNull().unique(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -84,7 +84,7 @@ export const memberships = pgTable(
     studioId: studioId(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
     role: membershipRole("role").notNull(),
     status: membershipStatus("status").notNull().default("pending"),
     createdAt: createdAt(),
@@ -99,7 +99,7 @@ export const students = pgTable(
     studioId: studioId(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
     status: studentStatus("status").notNull().default("active"),
     notes: text("notes"),
     createdAt: createdAt(),
@@ -115,7 +115,7 @@ export const agreements = pgTable(
     studioId: studioId(),
     studentId: uuid("student_id")
       .notNull()
-      .references(() => students.id),
+      .references(() => students.id, { onDelete: "cascade" }),
     weeklyLimit: integer("weekly_limit").notNull(),
     validFrom: date("valid_from").notNull(),
     validTo: date("valid_to"),
@@ -140,7 +140,7 @@ export const classSlots = pgTable(
     startTime: time("start_time").notNull(),
     durationMin: integer("duration_min").notNull(),
     capacity: integer("capacity").notNull(),
-    instructorId: uuid("instructor_id").references(() => users.id),
+    instructorId: uuid("instructor_id").references(() => users.id, { onDelete: "set null" }),
     activeFrom: date("active_from").notNull(),
     activeTo: date("active_to"),
     createdAt: createdAt(),
@@ -186,7 +186,7 @@ export const standingEnrollments = pgTable(
     studioId: studioId(),
     studentId: uuid("student_id")
       .notNull()
-      .references(() => students.id),
+      .references(() => students.id, { onDelete: "cascade" }),
     slotId: uuid("slot_id")
       .notNull()
       .references(() => classSlots.id),
@@ -212,13 +212,13 @@ export const standingRequests = pgTable(
     studioId: studioId(),
     studentId: uuid("student_id")
       .notNull()
-      .references(() => students.id),
-    fromEnrollmentId: uuid("from_enrollment_id").references(() => standingEnrollments.id),
+      .references(() => students.id, { onDelete: "cascade" }),
+    fromEnrollmentId: uuid("from_enrollment_id").references(() => standingEnrollments.id, { onDelete: "cascade" }),
     toSlotId: uuid("to_slot_id").references(() => classSlots.id),
     status: text("status").notNull().default("pending"),
     note: text("note"),
     decisionNote: text("decision_note"),
-    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -230,6 +230,9 @@ export const standingRequests = pgTable(
   ],
 );
 
+// Deleting a user or student removes everything that belongs to them (memberships, tokens, agreements, fixed
+// classes, requests, bookings). A database trigger (see migration 0006) keeps each class seat counter right when
+// bookings disappear this way. Staff-written references such as created_by or decided_by are cleared instead.
 export const bookings = pgTable(
   "bookings",
   {
@@ -240,11 +243,11 @@ export const bookings = pgTable(
       .references(() => classSessions.id),
     studentId: uuid("student_id")
       .notNull()
-      .references(() => students.id),
+      .references(() => students.id, { onDelete: "cascade" }),
     source: bookingSource("source").notNull(),
-    replacesBookingId: uuid("replaces_booking_id").references((): AnyPgColumn => bookings.id),
+    replacesBookingId: uuid("replaces_booking_id").references((): AnyPgColumn => bookings.id, { onDelete: "set null" }),
     status: bookingStatus("status").notNull().default("booked"),
-    createdBy: uuid("created_by").references(() => users.id),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key"),
     createdAt: createdAt(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),

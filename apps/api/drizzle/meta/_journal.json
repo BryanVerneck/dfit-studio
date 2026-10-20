@@ -43,6 +43,13 @@
       "when": 1792519282519,
       "tag": "0005_organic_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792525997861,
+      "tag": "0006_loose_red_shift",
+      "breakpoints": true
     }
   ]
 }
