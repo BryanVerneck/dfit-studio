@@ -50,6 +50,7 @@ Email and password. Passwords are stored only as argon2 hashes. A login returns 
 | `POST /auth/change-password` | logged in | Required after a temporary password |
 | `GET /me` | logged in | Current user |
 | `GET /staff/pending-students` | staff, owner | Signups waiting for approval |
+| `POST /staff/students` | staff, owner | Creates an active student with a weekly limit and a one-time temporary password |
 | `POST /staff/students/:userId/approve` | staff, owner | Activates the student |
 | `POST /staff/users/:userId/temporary-password` | staff (students), owner (anyone) | Returns a one-time temporary password |
 
@@ -79,7 +80,14 @@ A swap cancels the original and books the new class in the same transaction, so 
 | `POST /staff/sessions/cancel-day` | staff, owner | Cancel every class still scheduled on a date (`date`, optional `note`) |
 | `POST /staff/bookings` | staff, owner | Book a student into a class |
 | `POST /staff/students/:studentId/agreement` | staff, owner | Set the weekly class limit (history is kept) |
-| `POST /staff/students/:studentId/standing-enrollments` | staff, owner | Put a student on a fixed weekly class |
+| `POST /staff/students/:studentId/standing-enrollments` | staff, owner | Put a student on a fixed weekly class. Refused with `fixed_limit_reached` when the student already has as many fixed classes as their weekly limit, and with `class_full` unless `allowOverCapacity: true` |
+| `GET /staff/standing-enrollments` | staff, owner | Open fixed classes of all students |
+| `GET /staff/standing-requests` | staff, owner | Pending student requests to join, leave or move between fixed classes, with how full the requested class is |
+| `POST /staff/standing-requests/:id/approve` | staff, owner | Apply a request now (or from `effectiveFrom`); `allowOverCapacity: true` accepts a full class |
+| `POST /staff/standing-requests/:id/reject` | staff, owner | Refuse a request, with an optional `decisionNote` the student reads |
+| `GET /me/slots`, `GET /me/standing-enrollments`, `GET /me/standing-requests` | student | The timetable, the student's fixed classes and their requests |
+| `POST /me/standing-requests` | student | Ask to join (`toSlotId`), leave (`fromEnrollmentId`) or move (both) |
+| `POST /me/standing-requests/:id/cancel` | student | Withdraw a pending request |
 | `POST /staff/standing-enrollments/:id/end` | staff, owner | End a fixed class from a date; a permanent change of time is this plus a new enrollment |
 
 Students need an agreement (weekly limit) before they can book.
@@ -104,3 +112,13 @@ The API creates the coming weeks' class sessions, and books each student's fixed
 Forgot password: staff issue a temporary password and the student must replace it at next login. An emailed reset link is planned for a later phase.
 
 After changing `src/db/schema.ts`, run `pnpm --filter @dfit/api db:generate` to create a new migration and commit it.
+
+## Deploying
+
+The Dockerfile builds the API and the web app into one image. The API serves the web app, so both share one address and the login cookie works without any cross-site settings. On start it applies migrations and makes sure the studio and its owner exist (`start:prod`).
+
+`render.yaml` describes the setup for Render (one web service plus Postgres): New > Blueprint, pick this repository, and enter `SEED_OWNER_EMAIL` and `SEED_OWNER_PASSWORD` when asked. `JWT_SECRET` is generated and `DATABASE_URL` is wired automatically. Any host that runs a Docker image works the same way with these variables: `DATABASE_URL`, `JWT_SECRET` (32+ characters), `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`; `NODE_ENV=production`, `TRUST_PROXY=true` and `WEB_DIR` are already set in the image.
+
+Render's free plan puts the service to sleep after 15 idle minutes (the first request afterwards takes about a minute, and class sessions are generated again on wake-up) and its free database expires after 30 days, so it suits testing, not the real studio.
+
+To give a new deployment its first timetable, set `SEED_DEFAULT_TIMETABLE=true` (optionally `SEED_CLASS_TIMES="06:00,07:00"`, `SEED_CLASS_CAPACITY=8`, `SEED_CLASS_NAME=Treino`) and restart. It creates Monday to Friday class slots only when the studio has none, then generates the upcoming sessions. Remove the variable afterwards.

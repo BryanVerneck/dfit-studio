@@ -15,10 +15,9 @@ export function addDays(key: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-// The booking week runs Monday to Sunday.
-export function mondayOf(key: string) {
-  const weekday = toUtc(key).getUTCDay(); // 0 = Sunday
-  return addDays(key, -((weekday + 6) % 7));
+// The calendar shows Sunday to Saturday. The weekly class limit counts the same Sunday to Saturday week (decided by the server).
+export function sundayOf(key: string) {
+  return addDays(key, -toUtc(key).getUTCDay()); // 0 = Sunday
 }
 
 export const weekdayShort = (key: string) =>

@@ -192,12 +192,41 @@ export const standingEnrollments = pgTable(
       .references(() => classSlots.id),
     validFrom: date("valid_from").notNull(),
     validTo: date("valid_to"),
+    // Staff accepted a full class: the daily job adds one seat to a full session instead of skipping this student.
+    allowOverCapacity: boolean("allow_over_capacity").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     index("standing_enrollments_student_idx").on(t.studentId),
     index("standing_enrollments_slot_idx").on(t.slotId),
     check("standing_enrollments_valid_range_ck", sql`${t.validTo} IS NULL OR ${t.validTo} >= ${t.validFrom}`),
+  ],
+);
+
+// A student's ask to change the fixed schedule, for staff to approve. from only = leave a slot,
+// to only = join a slot, both = move from one slot to another.
+export const standingRequests = pgTable(
+  "standing_requests",
+  {
+    id: id(),
+    studioId: studioId(),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => students.id),
+    fromEnrollmentId: uuid("from_enrollment_id").references(() => standingEnrollments.id),
+    toSlotId: uuid("to_slot_id").references(() => classSlots.id),
+    status: text("status").notNull().default("pending"),
+    note: text("note"),
+    decisionNote: text("decision_note"),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("standing_requests_studio_status_idx").on(t.studioId, t.status),
+    index("standing_requests_student_idx").on(t.studentId),
+    check("standing_requests_status_ck", sql`${t.status} IN ('pending', 'approved', 'rejected', 'cancelled')`),
+    check("standing_requests_change_ck", sql`${t.fromEnrollmentId} IS NOT NULL OR ${t.toSlotId} IS NOT NULL`),
   ],
 );
 

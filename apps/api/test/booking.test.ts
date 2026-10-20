@@ -296,16 +296,20 @@ describe.skipIf(!process.env.DATABASE_URL)("booking", () => {
     expect(again.standingBooked).toBe(0);
     expect((await call("GET", "/me/bookings", ana.token)).json()).toHaveLength(mine.length - 1);
 
-    // A full class and a missing agreement are reported, not hidden.
+    // A missing agreement and a full class are refused; staff can accept the full class on purpose.
     const [b, c, d] = [await t.student("B", 3), await t.student("C", 3), await t.student("D", null)];
     for (const s of [b, c]) {
       await call("POST", `/staff/students/${s.studentId}/standing-enrollments`, owner.token, { slotId: tuesday.json().slot.id });
     }
     const third = await call("POST", `/staff/students/${d.studentId}/standing-enrollments`, owner.token, { slotId: tuesday.json().slot.id });
-    expect(third.json().generated.standingSkipped.map((x: { reason: string }) => x.reason)).toContain("no_agreement");
+    expect([third.statusCode, third.json().error]).toEqual([403, "no_agreement"]);
     const late = await t.student("E", 3);
     const overflow = await call("POST", `/staff/students/${late.studentId}/standing-enrollments`, owner.token, { slotId: tuesday.json().slot.id });
-    expect(overflow.json().generated.standingSkipped.map((x: { reason: string }) => x.reason)).toContain("class_full");
+    expect([overflow.statusCode, overflow.json().error]).toEqual([409, "class_full"]);
+    const accepted = await call("POST", `/staff/students/${late.studentId}/standing-enrollments`, owner.token, { slotId: tuesday.json().slot.id, allowOverCapacity: true });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json().generated.standingOverbooked).toBeGreaterThanOrEqual(1);
+    expect(accepted.json().generated.standingSkipped).toEqual([]);
 
     // Ending the Monday enrollment from today cancels the remaining standing bookings.
     const ended = await call("POST", `/staff/standing-enrollments/${enroll.json().enrollment.id}/end`, owner.token, {});

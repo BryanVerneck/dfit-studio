@@ -30,7 +30,7 @@ export async function loadStudio(db: Db, studioId: string): Promise<StudioCtx> {
 
 // Serializes everything a single student does, so two taps or two devices cannot both slip
 // under the weekly limit. Always taken before any class row is touched.
-async function lockStudent(tx: Tx, studio: StudioCtx, studentId: string) {
+export async function lockStudent(tx: Tx, studio: StudioCtx, studentId: string) {
   const [student] = await tx
     .select()
     .from(students)
@@ -113,6 +113,23 @@ async function claimSeat(tx: Tx, studioId: string, sessionId: string) {
     const [session] = await tx.select({ status: classSessions.status }).from(classSessions).where(eq(classSessions.id, sessionId));
     throw new AppError(409, session?.status === "cancelled" ? "session_cancelled" : "class_full");
   }
+}
+
+// For a fixed student whose staff accepted a full class: when no seat is free, the class grows by one.
+async function claimSeatOrOverbook(tx: Tx, studioId: string, sessionId: string): Promise<boolean> {
+  try {
+    await claimSeat(tx, studioId, sessionId);
+    return false;
+  } catch (err) {
+    if (!(err instanceof AppError && err.code === "class_full")) throw err;
+  }
+  const grown = await tx
+    .update(classSessions)
+    .set({ capacity: sql`${classSessions.capacity} + 1`, bookedCount: sql`${classSessions.bookedCount} + 1` })
+    .where(and(eq(classSessions.id, sessionId), eq(classSessions.studioId, studioId), eq(classSessions.status, "scheduled")))
+    .returning({ id: classSessions.id });
+  if (grown.length === 0) throw new AppError(409, "session_cancelled");
+  return true;
 }
 
 async function releaseSeat(tx: Tx, sessionId: string) {
@@ -278,6 +295,7 @@ export async function swapBooking(
 export interface GenerationResult {
   sessionsCreated: number;
   standingBooked: number;
+  standingOverbooked: number;
   standingSkipped: { studentId: string; sessionId: string; reason: string }[];
 }
 
@@ -311,7 +329,7 @@ export async function generateSessions(db: Db, studio: StudioCtx, days = studio.
     sessionsCreated = inserted.length;
   }
 
-  const result: GenerationResult = { sessionsCreated, standingBooked: 0, standingSkipped: [] };
+  const result: GenerationResult = { sessionsCreated, standingBooked: 0, standingOverbooked: 0, standingSkipped: [] };
   const horizon = now.plus({ days: days + 1 }).startOf("day").toJSDate();
   const sessions = await db
     .select()
@@ -359,15 +377,19 @@ export async function generateSessions(db: Db, studio: StudioCtx, days = studio.
       if (enrollment.validFrom > date || (enrollment.validTo && enrollment.validTo < date)) continue;
       if (done.has(`${session.id}|${enrollment.studentId}`)) continue;
       try {
-        await db.transaction(async (tx) => {
+        const overbooked = await db.transaction(async (tx) => {
           const student = await lockStudent(tx, studio, enrollment.studentId);
           if (student.status !== "active") throw new AppError(409, "student_inactive");
           await assertNotBooked(tx, session.id, enrollment.studentId);
           await assertWithinWeeklyLimit(tx, studio, enrollment.studentId, session.startsAt);
-          await claimSeat(tx, studio.id, session.id);
+          const grew = enrollment.allowOverCapacity
+            ? await claimSeatOrOverbook(tx, studio.id, session.id)
+            : (await claimSeat(tx, studio.id, session.id), false);
           await insertBooking(tx, studio, { sessionId: session.id, studentId: enrollment.studentId, source: "standing" });
+          return grew;
         });
         result.standingBooked++;
+        if (overbooked) result.standingOverbooked++;
       } catch (err) {
         if (!(err instanceof AppError)) throw err;
         result.standingSkipped.push({ studentId: enrollment.studentId, sessionId: session.id, reason: err.code });
@@ -388,15 +410,17 @@ export async function endEnrollment(db: Db, studio: StudioCtx, enrollmentId: str
 
   return db.transaction(async (tx) => {
     await lockStudent(tx, studio, enrollment.studentId);
-    if (effectiveFrom <= enrollment.validFrom) {
-      // Ended on or before its first day: it never took effect, so there is nothing to keep.
-      await tx.delete(standingEnrollments).where(eq(standingEnrollments.id, enrollment.id));
-    } else {
-      const lastDay = DateTime.fromISO(effectiveFrom).minus({ days: 1 }).toISODate()!;
-      await tx.update(standingEnrollments).set({ validTo: lastDay }).where(eq(standingEnrollments.id, enrollment.id));
-    }
+    const lastDay = DateTime.fromISO(effectiveFrom).minus({ days: 1 }).toISODate()!;
+    // Ended on or before its first day: it never ran, so it becomes an empty range in the past. It is kept
+    // rather than deleted because a request may point to it.
+    await tx
+      .update(standingEnrollments)
+      .set({ validFrom: enrollment.validFrom > lastDay ? lastDay : enrollment.validFrom, validTo: lastDay })
+      .where(eq(standingEnrollments.id, enrollment.id));
 
-    const from = DateTime.fromISO(effectiveFrom, { zone: studio.timezone }).startOf("day").toJSDate();
+    // Classes that already started stay as they were; everything still to come from that day on is cancelled now.
+    const dayStart = DateTime.fromISO(effectiveFrom, { zone: studio.timezone }).startOf("day").toJSDate();
+    const from = new Date(Math.max(dayStart.getTime(), Date.now()));
     const candidates = await tx
       .select({ id: bookings.id, sessionId: bookings.sessionId })
       .from(bookings)

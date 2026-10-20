@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { Alert } from "../components/Alert";
+import { RequestsLink } from "../components/RequestsLink";
+import { StudentTabs } from "../components/StudentTabs";
 import logo from "../assets/logo.png";
-import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, mondayOf, weekdayLong, weekdayShort } from "../lib/dates";
+import { addDays, dayAndMonth, dayKey, dayNumber, formatTime, sundayOf, weekdayLong, weekdayShort } from "../lib/dates";
 import { errorMessage } from "../lib/messages";
 import { notifyError, notifySuccess } from "../lib/notify";
 import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type ClassSession, type WeeklyUsage } from "../lib/schedule";
@@ -10,7 +13,7 @@ import { bookClass, cancelBooking, swapBooking, fetchSessions, fetchUsage, type 
 export default function HomePage() {
   const { state, logout } = useAuth();
   const today = dayKey(new Date());
-  const [weekStart, setWeekStart] = useState(() => mondayOf(today));
+  const [weekStart, setWeekStart] = useState(() => sundayOf(today));
   const [selected, setSelected] = useState(today);
   const [sessions, setSessions] = useState<ClassSession[] | null>(null);
   const [usage, setUsage] = useState<WeeklyUsage | null>(null);
@@ -44,7 +47,7 @@ export default function HomePage() {
   function changeWeek(delta: number) {
     const next = addDays(weekStart, delta * 7);
     setWeekStart(next);
-    setSelected(next === mondayOf(today) ? today : next);
+    setSelected(next === sundayOf(today) ? today : next);
   }
 
   async function book(session: ClassSession) {
@@ -95,10 +98,22 @@ export default function HomePage() {
     <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-10 pt-4">
       <header className="flex items-center justify-between">
         <img src={logo} alt="Dfit Studio" className="h-10 w-auto" />
-        <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
-          Sair
-        </button>
+        <div className="flex items-center">
+          {!isStudent && (
+            <>
+              <Link to="/equipe/alunos" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+                Alunos
+              </Link>
+              <RequestsLink />
+            </>
+          )}
+          <button type="button" onClick={() => void logout()} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-white">
+            Sair
+          </button>
+        </div>
       </header>
+
+      {isStudent && <StudentTabs />}
 
       <h1 className="mt-6 text-2xl font-semibold">Olá, {state.user.name.split(" ")[0]}</h1>
       {usage && (
@@ -110,14 +125,14 @@ export default function HomePage() {
       )}
 
       <nav className="mt-6 flex items-center justify-between" aria-label="Semana">
-        <button type="button" onClick={() => changeWeek(-1)} className="rounded-lg px-3 py-2 text-muted hover:text-white" aria-label="Semana anterior">
-          ‹
+        <button type="button" onClick={() => changeWeek(-1)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-white" aria-label="Semana anterior">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
         </button>
         <p className="text-sm text-muted">
           {dayAndMonth(days[0])} – {dayAndMonth(days[6])}
         </p>
-        <button type="button" onClick={() => changeWeek(1)} className="rounded-lg px-3 py-2 text-muted hover:text-white" aria-label="Próxima semana">
-          ›
+        <button type="button" onClick={() => changeWeek(1)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:text-white" aria-label="Próxima semana">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
         </button>
       </nav>
 
@@ -187,6 +202,14 @@ export default function HomePage() {
                     {full ? "Lotada" : `${s.spotsLeft} ${s.spotsLeft === 1 ? "vaga" : "vagas"}`}
                   </p>
                 </div>
+                {!isStudent && (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    {s.status === "cancelled" ? <p className="text-sm font-medium text-danger">Aula cancelada</p> : <span />}
+                    <Link to={`/equipe/aulas/${s.id}`} className="rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:border-brand-light">
+                      Ver alunos
+                    </Link>
+                  </div>
+                )}
                 {isStudent && (
                   <div className="mt-3">
                     {mine && !started ? (

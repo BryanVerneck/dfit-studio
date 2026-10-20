@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate, requireRole } from "../auth/guard.js";
 import { bookSeat, cancelDay, cancelSession, endEnrollment, generateSessions, loadStudio } from "../booking/service.js";
+import { addFixedClass } from "../booking/standing.js";
 import { localDate } from "../booking/time.js";
 import type { Config } from "../config.js";
 import type { Db } from "../db/client.js";
@@ -161,7 +162,7 @@ export function scheduleRoutes(config: Config, db: Db) {
     app.post("/staff/students/:studentId/standing-enrollments", async (request, reply) => {
       const auth = request.auth!;
       const { studentId } = z.object({ studentId: uuid }).parse(request.params);
-      const body = z.object({ slotId: uuid, validFrom: isoDate.optional() }).parse(request.body);
+      const body = z.object({ slotId: uuid, validFrom: isoDate.optional(), allowOverCapacity: z.boolean().optional() }).parse(request.body);
       const studio = await loadStudio(db, auth.studioId);
       const validFrom = body.validFrom ?? localDate(new Date(), studio.timezone);
 
@@ -170,29 +171,14 @@ export function scheduleRoutes(config: Config, db: Db) {
         .from(students)
         .where(and(eq(students.id, studentId), eq(students.studioId, studio.id)));
       if (!student) throw new AppError(404, "student_not_found");
-      const [slot] = await db
-        .select({ id: classSlots.id })
-        .from(classSlots)
-        .where(and(eq(classSlots.id, body.slotId), eq(classSlots.studioId, studio.id)));
-      if (!slot) throw new AppError(404, "slot_not_found");
-      const [open] = await db
-        .select({ id: standingEnrollments.id })
-        .from(standingEnrollments)
-        .where(
-          and(
-            eq(standingEnrollments.studentId, studentId),
-            eq(standingEnrollments.slotId, body.slotId),
-            sql`(${standingEnrollments.validTo} is null or ${standingEnrollments.validTo} >= ${validFrom})`,
-          ),
-        );
-      if (open) throw new AppError(409, "already_enrolled");
-
-      const [enrollment] = await db
-        .insert(standingEnrollments)
-        .values({ studioId: studio.id, studentId, slotId: body.slotId, validFrom })
-        .returning();
-      const generated = await generateSessions(db, studio);
-      return reply.code(201).send({ enrollment, generated });
+      // A fixed class needs room in the student's weekly limit and, if the class is full, an explicit okay from staff.
+      const result = await addFixedClass(db, studio, {
+        studentId,
+        slotId: body.slotId,
+        validFrom,
+        allowOverCapacity: body.allowOverCapacity ?? false,
+      });
+      return reply.code(201).send(result);
     });
 
     // Ends a fixed enrollment from a date (default today) and cancels its standing bookings from then on.

@@ -36,6 +36,13 @@
       "when": 1792035432299,
       "tag": "0004_ambiguous_electro",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792519282519,
+      "tag": "0005_organic_titanium_man",
+      "breakpoints": true
     }
   ]
 }

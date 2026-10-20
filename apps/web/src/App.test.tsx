@@ -17,7 +17,7 @@ const session = (mustChangePassword = false) => ({ accessToken: "tok", expiresIn
 beforeEach(() => {
   setAccessToken(null);
   calls = [];
-  routes = { "POST /auth/refresh": () => ({ status: 401, body: { error: "unauthorized" } }), "GET /sessions": () => ({ body: [] }), "GET /me/weekly-usage": () => ({ body: { weekStart: "x", used: 0, weeklyLimit: 3, remaining: 3 } }) };
+  routes = { "POST /auth/refresh": () => ({ status: 401, body: { error: "unauthorized" } }), "GET /sessions": () => ({ body: [] }), "GET /staff/pending-students": () => ({ body: [] }), "GET /staff/standing-requests": () => ({ body: [] }), "GET /me/weekly-usage": () => ({ body: { weekStart: "x", used: 0, weeklyLimit: 3, remaining: 3 } }) };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init: RequestInit = {}) => {
@@ -187,8 +187,8 @@ describe("week view", () => {
     list = [klass("a", at("07:00")), klass("b", at("18:00")), klass("c", at("19:00"), { spotsLeft: 0 }), klass("d", at("07:00", "2026-10-15"))];
     routes["POST /auth/refresh"] = () => ({ body: session() });
     routes["GET /me"] = () => ({ body: me });
-    routes["GET /me/weekly-usage?date=2026-10-12"] = () => ({ body: { weekStart: "2026-10-12", used: 1, weeklyLimit: 3, remaining: 2 } });
-    routes["GET /sessions?from=2026-10-12&to=2026-10-18"] = () => ({ body: list });
+    routes["GET /me/weekly-usage?date=2026-10-11"] = () => ({ body: { weekStart: "2026-10-11", used: 1, weeklyLimit: 3, remaining: 2 } });
+    routes["GET /sessions?from=2026-10-11&to=2026-10-17"] = () => ({ body: list });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -200,6 +200,13 @@ describe("week view", () => {
     expect(screen.getByText("Lotada")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sem vagas" })).toBeDisabled();
     expect(screen.queryByText("07:00", { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("lists the week from Sunday to Saturday", async () => {
+    renderAt("/");
+    await screen.findByText("18:00");
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs).toEqual(["dom11", "seg12", "ter13", "qua14", "qui15", "sex16", "sáb17"]);
   });
 
   it("switches day", async () => {
@@ -303,13 +310,559 @@ describe("week view", () => {
   });
 
   it("loads another week", async () => {
-    routes["GET /me/weekly-usage?date=2026-10-19"] = () => ({ body: { weekStart: "2026-10-19", used: 0, weeklyLimit: 3, remaining: 3 } });
-    routes["GET /sessions?from=2026-10-19&to=2026-10-25"] = () => ({ body: [] });
+    routes["GET /me/weekly-usage?date=2026-10-18"] = () => ({ body: { weekStart: "2026-10-18", used: 0, weeklyLimit: 3, remaining: 3 } });
+    routes["GET /sessions?from=2026-10-18&to=2026-10-24"] = () => ({ body: [] });
     renderAt("/");
     const user = userEvent.setup({ advanceTimers: () => {} });
     await screen.findByText("18:00");
     await user.click(screen.getByRole("button", { name: "Próxima semana" }));
     expect(await screen.findByText("Nenhuma aula neste dia.")).toBeInTheDocument();
     expect(screen.getByText("Você usou 0 de 3 aulas nesta semana.")).toBeInTheDocument();
+  });
+});
+
+describe("staff approvals", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+  const pendingList = [{ userId: "u9", name: "Novo Aluno", email: "novo@x.com", phone: "11 99999-0000", requestedAt: "2026-10-14T12:00:00Z" }];
+  let pending: typeof pendingList;
+
+  beforeEach(() => {
+    pending = [...pendingList];
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/pending-students"] = () => ({ body: pending });
+  });
+
+  it("approves a student with a weekly limit", async () => {
+    routes["POST /staff/students/u9/approve"] = () => {
+      pending = [];
+      return { body: { studentId: "s9" } };
+    };
+    routes["POST /staff/students/s9/agreement"] = () => ({ body: { agreement: {} } });
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    expect(await screen.findByText("Novo Aluno")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aprovar" }));
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "4" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    expect(await screen.findByText("Novo Aluno foi aprovado(a).")).toBeInTheDocument();
+    expect(await screen.findByText("Nenhum cadastro pendente.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students/s9/agreement")?.body).toEqual({ weeklyLimit: 4 });
+  });
+
+  it("shows a message when the signup is no longer pending", async () => {
+    routes["POST /staff/students/u9/approve"] = () => ({ status: 404, body: { error: "pending_student_not_found" } });
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Aprovar" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    expect(await screen.findByText("Este cadastro não está mais pendente.")).toBeInTheDocument();
+  });
+
+  it("shows new students and fixed-class requests together", async () => {
+    routes["GET /staff/standing-requests"] = () => ({
+      body: [{ id: "r1", studentId: "s1", status: "pending", note: null, decisionNote: null, studentName: "Ana Souza", studentPhone: null, from: null, to: { slotId: "sl2", enrollmentId: null, name: "Treino", weekday: 2, startTime: "08:00:00", durationMin: 60 }, capacity: null }],
+    });
+    renderAt("/equipe/solicitacoes");
+    expect(await screen.findByRole("heading", { name: "Solicitações" })).toBeInTheDocument();
+    expect(await screen.findByText("Novo Aluno")).toBeInTheDocument();
+    expect(await screen.findByText("Entrar na turma de Terça 08:00")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Novos alunos" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Horário fixo" })).toBeInTheDocument();
+  });
+
+  it("keeps the old approvals and requests addresses working", async () => {
+    renderAt("/equipe/aprovacoes");
+    expect(await screen.findByRole("heading", { name: "Solicitações" })).toBeInTheDocument();
+  });
+
+  it("shows how many requests are waiting on the menu link", async () => {
+    routes["GET /staff/standing-requests"] = () => ({
+      body: [{ id: "r1", studentId: "s1", status: "pending", note: null, decisionNote: null, studentName: "Ana Souza", studentPhone: null, from: null, to: null, capacity: null }],
+    });
+    renderAt("/");
+    // One new sign-up plus one fixed-class request.
+    expect(await screen.findByRole("link", { name: "Solicitações, 2 pendentes" })).toBeInTheDocument();
+  });
+
+  it("links to requests from the home page for staff only", async () => {
+    routes["GET /sessions"] = () => ({ body: [] });
+    renderAt("/");
+    expect(await screen.findByRole("link", { name: "Solicitações" })).toBeInTheDocument();
+  });
+
+  it("sends students away from the approvals page", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    renderAt("/equipe/solicitacoes");
+    expect(await screen.findByRole("heading", { name: "Olá, Ana" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Solicitações" })).not.toBeInTheDocument();
+  });
+});
+
+describe("staff students", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+  let rows: { studentId: string; userId: string; name: string; email: string; phone: string | null; weeklyLimit: number | null }[];
+
+  beforeEach(() => {
+    rows = [
+      { studentId: "s1", userId: "u1", name: "Ana Souza", email: "ana@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s2", userId: "u2", name: "Bruno Dias", email: "bruno@x.com", phone: "11 90000-0000", weeklyLimit: null },
+    ];
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/students"] = () => ({ body: rows });
+  });
+
+  it("lists students with their limits and filters by search", async () => {
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    expect(await screen.findByText("3 aulas por semana")).toBeInTheDocument();
+    expect(screen.getByText("Sem plano definido")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "bruno");
+    expect(screen.queryByText("Ana Souza")).not.toBeInTheDocument();
+    expect(screen.getByText("Bruno Dias")).toBeInTheDocument();
+  });
+
+  it("changes a weekly limit", async () => {
+    routes["POST /staff/students/s2/agreement"] = (body) => {
+      rows = rows.map((r) => (r.studentId === "s2" ? { ...r, weeklyLimit: body.weeklyLimit } : r));
+      return { body: { agreement: {} } };
+    };
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Bruno Dias");
+    await user.click(screen.getAllByRole("button", { name: "Alterar limite" })[1]);
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "2" }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(await screen.findByText("2 aulas por semana")).toBeInTheDocument();
+    expect(await screen.findByText("Limite de Bruno Dias atualizado.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students/s2/agreement")?.body).toEqual({ weeklyLimit: 2 });
+  });
+
+  it("asks before generating a temporary password, then shows it once", async () => {
+    routes["POST /staff/users/u1/temporary-password"] = () => ({ body: { temporaryPassword: "Tmp-Pass-123" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Ana Souza");
+    await user.click(screen.getAllByRole("button", { name: "Senha temporária" })[0]);
+    expect(calls.some((c) => c.path.includes("temporary-password"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Gerar senha" }));
+    expect(await screen.findByText("Tmp-Pass-123")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByText("Tmp-Pass-123")).not.toBeInTheDocument();
+  });
+
+  it("shows an error toast when the reset is not allowed", async () => {
+    routes["POST /staff/users/u1/temporary-password"] = () => ({ status: 403, body: { error: "forbidden" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await screen.findByText("Ana Souza");
+    await user.click(screen.getAllByRole("button", { name: "Senha temporária" })[0]);
+    await user.click(screen.getByRole("button", { name: "Gerar senha" }));
+    expect(await screen.findByText("Você não tem permissão para isso.")).toBeInTheDocument();
+  });
+});
+
+describe("class detail for staff", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-14T12:00:00Z") });
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("opens a class from the schedule and lists its students", async () => {
+    routes["GET /sessions"] = () => ({
+      body: [
+        { id: "c1", slotId: "sl", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", durationMin: 60, capacity: 8, spotsLeft: 6, status: "scheduled", cancelNote: null, myBookingId: null },
+        { id: "c2", slotId: "sl", name: "Treino", startsAt: "2026-10-14T22:00:00-03:00", durationMin: 60, capacity: 8, spotsLeft: 8, status: "cancelled", cancelNote: null, myBookingId: null },
+      ],
+    });
+    routes["GET /staff/sessions/c1/roster"] = () => ({
+      body: {
+        session: { id: "c1", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", capacity: 8, bookedCount: 2, status: "scheduled" },
+        roster: [
+          { bookingId: "b1", studentId: "s1", name: "Ana Souza", phone: "11 91111-1111", source: "standing" },
+          { bookingId: "b2", studentId: "s2", name: "Bruno Dias", phone: null, source: "one_off" },
+        ],
+      },
+    });
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    expect(await screen.findByText("Aula cancelada")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reservar" })).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("link", { name: "Ver alunos" })[0]);
+    expect(await screen.findByRole("heading", { name: "21:00 · Treino" })).toBeInTheDocument();
+    expect(screen.getByText("2 de 8")).toBeInTheDocument();
+    expect(screen.getByText("Ana Souza")).toBeInTheDocument();
+    expect(screen.getByText("Horário fixo")).toBeInTheDocument();
+    expect(screen.getByText("Avulsa")).toBeInTheDocument();
+  });
+
+  it("shows an error when the class does not exist", async () => {
+    routes["GET /staff/sessions/nope/roster"] = () => ({ status: 404, body: { error: "session_not_found" } });
+    renderAt("/equipe/aulas/nope");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Aula não encontrada.");
+  });
+
+  describe("actions", () => {
+    let roster: { bookingId: string; studentId: string; name: string; phone: string | null; source: string }[];
+    let status: string;
+    const everyone = [
+      { studentId: "s1", userId: "u1", name: "Ana Souza", email: "ana@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s2", userId: "u2", name: "Bruno Dias", email: "bruno@x.com", phone: null, weeklyLimit: 3 },
+      { studentId: "s3", userId: "u3", name: "Carla Lima", email: "carla@x.com", phone: "11 95555-5555", weeklyLimit: 3 },
+    ];
+
+    beforeEach(() => {
+      status = "scheduled";
+      roster = [
+        { bookingId: "b1", studentId: "s1", name: "Ana Souza", phone: "11 91111-1111", source: "standing" },
+        { bookingId: "b2", studentId: "s2", name: "Bruno Dias", phone: null, source: "one_off" },
+      ];
+      routes["GET /staff/sessions/c1/roster"] = () => ({
+        body: { session: { id: "c1", name: "Treino", startsAt: "2026-10-14T21:00:00-03:00", capacity: 8, bookedCount: roster.length, status }, roster },
+      });
+      routes["GET /staff/students"] = () => ({ body: everyone });
+    });
+
+    it("adds a student who is not in the class yet", async () => {
+      routes["POST /staff/bookings"] = (body) => {
+        const s = everyone.find((e) => e.studentId === body.studentId)!;
+        roster = [...roster, { bookingId: "b3", studentId: s.studentId, name: s.name, phone: s.phone, source: "one_off" }];
+        return { status: 201, body: { booking: { id: "b3" } } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Adicionar aluno" }));
+      expect(await screen.findByRole("button", { name: "Adicionar Carla Lima" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Adicionar Ana Souza" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Adicionar Carla Lima" }));
+      expect(await screen.findByText("3 de 8")).toBeInTheDocument();
+      expect(calls.find((c) => c.path === "/staff/bookings")?.body).toEqual({ sessionId: "c1", studentId: "s3" });
+    });
+
+    it("explains when the student cannot take another class", async () => {
+      routes["POST /staff/bookings"] = () => ({ status: 409, body: { error: "weekly_limit_reached" } });
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Adicionar aluno" }));
+      await user.click(await screen.findByRole("button", { name: "Adicionar Carla Lima" }));
+      expect((await screen.findAllByText("Este aluno já usou todas as aulas desta semana.")).length).toBeGreaterThan(0);
+      expect(screen.getByText("2 de 8")).toBeInTheDocument();
+    });
+
+    it("removes a student after confirmation", async () => {
+      routes["DELETE /bookings/b2"] = () => {
+        roster = roster.filter((r) => r.bookingId !== "b2");
+        return { body: { booking: { id: "b2" } } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click((await screen.findAllByRole("button", { name: "Remover" }))[1]);
+      expect(calls.some((c) => c.path === "/bookings/b2")).toBe(false);
+      await user.click(screen.getByRole("button", { name: "Sim, remover" }));
+      expect(await screen.findByText("1 de 8")).toBeInTheDocument();
+      expect(screen.queryByText("Bruno Dias")).not.toBeInTheDocument();
+    });
+
+    it("cancels the class and lists the students to tell", async () => {
+      routes["POST /staff/sessions/c1/cancel"] = (body) => {
+        status = "cancelled";
+        const affected = roster.map((r) => ({ studentId: r.studentId, name: r.name, phone: r.phone }));
+        roster = [];
+        return { body: { sessionId: "c1", bookingsCancelled: affected.length, affected, note: body.note } };
+      };
+      renderAt("/equipe/aulas/c1");
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(await screen.findByRole("button", { name: "Cancelar aula" }));
+      await user.type(screen.getByLabelText(/Motivo/), "Feriado");
+      await user.click(screen.getByRole("button", { name: "Sim, cancelar aula" }));
+      expect(await screen.findByText("Avise estes 2 alunos:")).toBeInTheDocument();
+      expect(screen.getByText(/11 91111-1111/)).toBeInTheDocument();
+      expect(calls.find((c) => c.path === "/staff/sessions/c1/cancel")?.body).toEqual({ note: "Feriado" });
+      expect(screen.queryByRole("button", { name: "Adicionar aluno" })).not.toBeInTheDocument();
+    });
+
+    it("offers no actions for a class that was already cancelled", async () => {
+      status = "cancelled";
+      roster = [];
+      renderAt("/equipe/aulas/c1");
+      expect(await screen.findByText("Aula cancelada")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancelar aula" })).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("new student", () => {
+  const staff = { id: "st1", email: "bia@x.com", name: "Bia Staff", role: "owner", studioId: "studio1", mustChangePassword: false };
+
+  beforeEach(() => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/students"] = () => ({ body: [] });
+  });
+
+  it("creates a student and shows the temporary password once", async () => {
+    routes["POST /staff/students"] = () => ({ status: 201, body: { userId: "u9", studentId: "s9", temporaryPassword: "Tmp-Pass-999" } });
+    renderAt("/equipe/alunos");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: "Novo aluno" }));
+    await user.type(screen.getByLabelText("Nome"), "Carla Dias");
+    await user.type(screen.getByLabelText("E-mail"), "Carla@X.com");
+    await user.click(screen.getByLabelText("Aulas por semana"));
+    await user.click(screen.getByRole("option", { name: "2" }));
+    await user.click(screen.getByRole("button", { name: "Cadastrar aluno" }));
+    expect(await screen.findByText("Tmp-Pass-999")).toBeInTheDocument();
+    expect(screen.getByText("Carla Dias foi cadastrado.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/students" && c.body)?.body).toEqual({ name: "Carla Dias", email: "Carla@X.com", weeklyLimit: 2 });
+    await user.click(screen.getByRole("button", { name: "Cadastrar outro" }));
+    expect(screen.queryByText("Tmp-Pass-999")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toHaveValue("");
+  });
+
+  it("checks the form and reports an e-mail that is already in use", async () => {
+    routes["POST /staff/students"] = () => ({ status: 409, body: { error: "email_taken" } });
+    renderAt("/equipe/alunos/novo");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Cadastrar aluno" }));
+    expect(screen.getByText("Informe o nome.")).toBeInTheDocument();
+    expect(screen.getByText("Informe seu e-mail.")).toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/staff/students" && c.body)).toBe(false);
+    await user.type(screen.getByLabelText("Nome"), "Carla");
+    await user.type(screen.getByLabelText("E-mail"), "carla@x.com");
+    await user.click(screen.getByRole("button", { name: "Cadastrar aluno" }));
+    expect(await screen.findByText("Já existe um aluno com este e-mail.")).toBeInTheDocument();
+  });
+});
+
+describe("my bookings", () => {
+  const at = (day: string, hour: string) => `${day}T${hour}:00-03:00`;
+  const booking = (id: string, startsAt: string, extra = {}) => ({
+    id, sessionId: `s-${id}`, source: "standing", status: "booked", cancelReason: null, cancelNote: null, name: "Treino", startsAt, durationMin: 60, ...extra,
+  });
+  let list: any[];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-14T12:00:00Z") });
+    list = [
+      booking("early", at("2026-10-14", "07:00")),
+      booking("a", at("2026-10-15", "07:00")),
+      booking("b", at("2026-10-15", "18:00"), { source: "one_off" }),
+      booking("c", at("2026-10-16", "07:00"), { status: "cancelled", cancelReason: "class_cancelled", cancelNote: "Feriado" }),
+    ];
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    routes["GET /me/bookings"] = () => ({ body: list });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("lists upcoming classes by day and leaves out the ones that already ended", async () => {
+    renderAt("/minhas-aulas");
+    expect(await screen.findByText("Quinta-feira, 15 de outubro")).toBeInTheDocument();
+    expect(screen.getByText("Sexta-feira, 16 de outubro")).toBeInTheDocument();
+    expect(screen.queryByText("Quarta-feira, 14 de outubro")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Horário fixo").length).toBeGreaterThan(0);
+    expect(screen.getByText("Avulsa")).toBeInTheDocument();
+    expect(screen.getByText("Aula cancelada pelo estúdio: Feriado")).toBeInTheDocument();
+  });
+
+  it("cancels a booking after confirmation", async () => {
+    routes["DELETE /bookings/a"] = () => {
+      list = list.filter((b) => b.id !== "a");
+      return { body: { booking: { id: "a" } } };
+    };
+    renderAt("/minhas-aulas");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click((await screen.findAllByRole("button", { name: "Cancelar" }))[0]);
+    expect(calls.some((c) => c.path === "/bookings/a")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/bookings/a")).toBe(true));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Cancelar" })).toHaveLength(1));
+  });
+
+  it("shows an empty message and a tab to move between screens", async () => {
+    list = [];
+    renderAt("/");
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(await screen.findByRole("link", { name: "Minhas aulas" }));
+    expect(await screen.findByText("Você não tem aulas reservadas.")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Aulas" }));
+    expect(await screen.findByRole("heading", { name: /Olá/ })).toBeInTheDocument();
+  });
+
+  it("sends the studio team back to the class list", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: { ...me, role: "owner" } });
+    renderAt("/minhas-aulas");
+    expect(await screen.findByRole("heading", { name: /Olá/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Minhas aulas" })).not.toBeInTheDocument();
+  });
+});
+
+describe("fixed classes", () => {
+  const staff = { ...me, id: "st1", name: "Bia Staff", role: "owner" };
+  const monday = { id: "sl1", name: "Treino", weekday: 1, startTime: "07:00:00", durationMin: 60 };
+  const tuesday = { id: "sl2", name: "Treino", weekday: 2, startTime: "08:00:00", durationMin: 60 };
+  const mine = { ...monday, id: "en1", studentId: "s1", slotId: "sl1", validFrom: "2026-10-01", validTo: null };
+
+  it("lets a student ask to move to another time and shows the request as pending", async () => {
+    let requests: unknown[] = [];
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    routes["GET /me/bookings"] = () => ({ body: [] });
+    routes["GET /me/slots"] = () => ({ body: [monday, tuesday] });
+    routes["GET /me/standing-enrollments"] = () => ({ body: [mine] });
+    routes["GET /me/standing-requests"] = () => ({ body: requests });
+    routes["POST /me/standing-requests"] = (body) => {
+      requests = [
+        { id: "r1", status: "pending", note: body.note ?? null, decisionNote: null, from: { slotId: "sl1", enrollmentId: "en1", ...monday }, to: { slotId: "sl2", enrollmentId: null, ...tuesday } },
+      ];
+      return { status: 201, body: { request: requests[0] } };
+    };
+    renderAt("/minhas-aulas");
+    const user = userEvent.setup();
+    expect(await screen.findByText("Segunda 07:00")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Trocar horário" }));
+    await user.type(screen.getByLabelText("Recado para o estúdio (opcional)"), "Mudei de emprego");
+    await user.click(screen.getByRole("button", { name: "Enviar pedido" }));
+    expect(await screen.findByText("Trocar Segunda 07:00 por Terça 08:00")).toBeInTheDocument();
+    expect(screen.getByText("Aguardando o estúdio")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/me/standing-requests" && c.body)?.body).toEqual({ fromEnrollmentId: "en1", toSlotId: "sl2", note: "Mudei de emprego" });
+  });
+
+  it("tells the student when the plan has no room for another fixed class", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: session() });
+    routes["GET /me"] = () => ({ body: me });
+    routes["GET /me/bookings"] = () => ({ body: [] });
+    routes["GET /me/slots"] = () => ({ body: [monday, tuesday] });
+    routes["GET /me/standing-enrollments"] = () => ({ body: [] });
+    routes["GET /me/standing-requests"] = () => ({ body: [] });
+    routes["POST /me/standing-requests"] = () => ({ status: 409, body: { error: "fixed_limit_reached" } });
+    renderAt("/minhas-aulas");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pedir horário fixo" }));
+    await user.click(screen.getByRole("button", { name: "Enviar pedido" }));
+    expect((await screen.findAllByText(/tantas aulas fixas quanto o seu plano permite/))[0]).toBeInTheDocument();
+  });
+
+  const pending = (extra: object = {}) => ({
+    id: "r1",
+    studentId: "s1",
+    status: "pending",
+    note: "Prefiro de manhã",
+    decisionNote: null,
+    studentName: "Ana Souza",
+    studentPhone: null,
+    from: null,
+    to: { slotId: "sl2", enrollmentId: null, ...tuesday },
+    capacity: { capacity: 8, nextBooked: 5, fullSessions: 0, totalSessions: 4 },
+    ...extra,
+  });
+
+  it("lets staff approve a request for a class with free seats", async () => {
+    let list = [pending()];
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/standing-requests"] = () => ({ body: list });
+    routes["POST /staff/standing-requests/r1/approve"] = () => {
+      list = [];
+      return { body: { effectiveFrom: "2026-10-21", overbooked: 0, skipped: [] } };
+    };
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    expect(await screen.findByText("Entrar na turma de Terça 08:00")).toBeInTheDocument();
+    expect(screen.getByText("“Prefiro de manhã”")).toBeInTheDocument();
+    expect(screen.queryByText(/Turma cheia/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aprovar" }));
+    expect(await screen.findByText("Nenhum pedido no momento.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/standing-requests/r1/approve")?.body).toEqual({ allowOverCapacity: false });
+  });
+
+  it("warns that the class is full and only approves it on purpose", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/standing-requests"] = () => ({ body: [pending({ capacity: { capacity: 8, nextBooked: 8, fullSessions: 4, totalSessions: 4 } })] });
+    routes["POST /staff/standing-requests/r1/approve"] = () => ({ body: { effectiveFrom: "2026-10-21", overbooked: 4, skipped: [] } });
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    expect(await screen.findByText(/Turma cheia: 8 de 8 vagas em todas as próximas aulas/)).toBeInTheDocument();
+    expect(screen.getByText(/a turma passa a ter 9 alunos/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aprovar mesmo assim" }));
+    await screen.findAllByText("Pedido de Ana Souza aprovado.");
+    expect(calls.find((c) => c.path === "/staff/standing-requests/r1/approve")?.body).toEqual({ allowOverCapacity: true });
+  });
+
+  it("lets staff reject a request with a reason", async () => {
+    routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+    routes["GET /me"] = () => ({ body: staff });
+    routes["GET /staff/standing-requests"] = () => ({ body: [pending()] });
+    routes["POST /staff/standing-requests/r1/reject"] = () => ({ body: { ok: true } });
+    renderAt("/equipe/solicitacoes");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Recusar" }));
+    await user.type(screen.getByLabelText("Motivo (o aluno vai ler)"), "Turma sem vaga");
+    await user.click(screen.getByRole("button", { name: "Recusar pedido" }));
+    expect(await screen.findByText("Pedido de Ana Souza recusado.")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/staff/standing-requests/r1/reject")?.body).toEqual({ decisionNote: "Turma sem vaga" });
+  });
+
+  describe("on the students screen", () => {
+    const rows = [{ studentId: "s1", userId: "u1", name: "Ana Souza", email: "ana@x.com", phone: null, weeklyLimit: 2 }];
+    beforeEach(() => {
+      routes["POST /auth/refresh"] = () => ({ body: { ...session(), role: "owner" } });
+      routes["GET /me"] = () => ({ body: staff });
+      routes["GET /staff/students"] = () => ({ body: rows });
+      routes["GET /staff/slots"] = () => ({ body: [monday, tuesday] });
+    });
+
+    it("asks before adding a student to a full class", async () => {
+      routes["GET /staff/standing-enrollments"] = () => ({ body: [mine] });
+      let attempts = 0;
+      routes["POST /staff/students/s1/standing-enrollments"] = (body) => {
+        attempts++;
+        return body.allowOverCapacity ? { status: 201, body: { enrollment: {}, generated: {} } } : { status: 409, body: { error: "class_full" } };
+      };
+      renderAt("/equipe/alunos");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Horário fixo" }));
+      expect(await screen.findByText(/Segunda 07:00/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Adicionar" }));
+      expect(await screen.findByText(/Esta turma está cheia/)).toBeInTheDocument();
+      expect(attempts).toBe(1);
+      await user.click(screen.getByRole("button", { name: "Adicionar mesmo assim" }));
+      expect(await screen.findByText("Horário fixo de Ana Souza adicionado.")).toBeInTheDocument();
+      expect(calls.filter((c) => c.path === "/staff/students/s1/standing-enrollments").map((c) => c.body)).toEqual([
+        { slotId: "sl2", allowOverCapacity: false },
+        { slotId: "sl2", allowOverCapacity: true },
+      ]);
+    });
+
+    it("blocks adding fixed classes beyond the weekly limit", async () => {
+      routes["GET /staff/standing-enrollments"] = () => ({ body: [mine, { ...tuesday, id: "en2", studentId: "s1", slotId: "sl2", validFrom: "2026-10-01", validTo: null }] });
+      renderAt("/equipe/alunos");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Horário fixo" }));
+      expect(await screen.findByText(/já tem 2 de 2 horários fixos/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Adicionar" })).not.toBeInTheDocument();
+    });
+
+    it("ends a fixed class right away after confirming", async () => {
+      routes["GET /staff/standing-enrollments"] = () => ({ body: [mine] });
+      routes["POST /staff/standing-enrollments/en1/end"] = () => ({ body: { bookingsCancelled: 3 } });
+      renderAt("/equipe/alunos");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Horário fixo" }));
+      await user.click(await screen.findByRole("button", { name: "Encerrar" }));
+      expect(calls.some((c) => c.path.endsWith("/end"))).toBe(false);
+      await user.click(screen.getByRole("button", { name: "Sim, encerrar" }));
+      await screen.findByText("Segunda 07:00 encerrado para Ana Souza.");
+      expect(calls.find((c) => c.path === "/staff/standing-enrollments/en1/end")?.body).toEqual({});
+    });
   });
 });
